@@ -2,13 +2,32 @@
 // Data lives OUTSIDE OneDrive (sync + Postgres files = corruption): %LOCALAPPDATA%\sunpower\pgdata
 // Usage:  npm run db:start      (keep this terminal open; Ctrl+C to stop)
 import EmbeddedPostgres from 'embedded-postgres';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 const port = Number(process.env.PG_PORT || 5433);
 const databaseDir =
   process.env.PG_DATA_DIR || path.join(process.env.LOCALAPPDATA || os.homedir(), 'sunpower', 'pgdata');
+
+// Clean up stale postmaster.pid if a previous terminal closed abruptly on Windows
+const pidFile = path.join(databaseDir, 'postmaster.pid');
+if (existsSync(pidFile)) {
+  try {
+    const pid = Number(readFileSync(pidFile, 'utf8').split(/\r?\n/)[0].trim());
+    if (pid) {
+      try {
+        process.kill(pid, 0);
+      } catch (e) {
+        if (e.code === 'ESRCH') {
+          unlinkSync(pidFile);
+        }
+      }
+    }
+  } catch {
+    // ignore read/unlink errors
+  }
+}
 
 const pg = new EmbeddedPostgres({
   databaseDir,

@@ -51,12 +51,33 @@ function RootRedirect() {
   return <Navigate to="/leads" replace />;
 }
 
+// Public landing (/enquiry) and the sign-in screen use the full-bleed template design with
+// their own headers; every other screen gets the glass dashboard shell + navbar.
+const FULL_BLEED_ROUTES = ['/login', '/enquiry'];
+
+function AppLayout({ children }) {
+  const location = useLocation();
+  const fullBleed = FULL_BLEED_ROUTES.some((p) => location.pathname === p || location.pathname.startsWith(p + '/'));
+
+  if (fullBleed) {
+    return <div className="min-h-screen flex flex-col font-sans bg-white">{children}</div>;
+  }
+  return (
+    <div className="app-shell min-h-screen flex flex-col font-sans">
+      <div className="app-backdrop no-print" aria-hidden="true">
+        <img src="/images/hero.jpg" alt="" />
+      </div>
+      <Navbar />
+      {children}
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-          <Navbar />
+        <AppLayout>
           <main className="flex-1">
             <Routes>
               {/* Public Routes */}
@@ -216,7 +237,7 @@ export default function App() {
               <Route path="*" element={<RootRedirect />} />
             </Routes>
           </main>
-        </div>
+        </AppLayout>
       </AuthProvider>
     </BrowserRouter>
   );

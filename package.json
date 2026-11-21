@@ -1,0 +1,16 @@
+{
+  "name": "sunpower-crm",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SunPower solar CRM workspace",
+  "scripts": {
+    "db:start": "npm --prefix backend run db:start",
+    "db:reset": "npm --prefix backend run db:reset",
+    "backend": "npm --prefix backend run dev",
+    "frontend": "npm --prefix frontend run dev",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "test:pipeline": "npm --prefix backend run test:pipeline",
+    "test:smoke": "npm --prefix backend run test:smoke"
+  }
+}

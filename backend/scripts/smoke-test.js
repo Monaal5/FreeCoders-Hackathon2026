@@ -73,7 +73,7 @@ async function api(method, url, { token, body, form } = {}) {
 
   const techs = await api('GET', '/users?role=TECHNICIAN', { token: staff });
   check('technicians list (Vikram + Zara)', techs.json.data.length === 2 && techs.json.data[0].email === 'tech@sunpower.com', techs.json);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString('en-CA');
   const otherSv = await api('POST', `/leads/${lead.id}/surveys`, { token: other, body: { technicianId: techs.json.data[0].id, scheduledDate: today } });
   check('other staff assign survey 404', otherSv.status === 404, otherSv.json);
   const sv = await api('POST', `/leads/${lead.id}/surveys`, { token: staff, body: { technicianId: techs.json.data[0].id, scheduledDate: today } });
@@ -241,7 +241,7 @@ async function api(method, url, { token, body, form } = {}) {
   check('P2 tech cannot deliver before being crew lead 404', (await api('POST', `/orders/${oid}/deliver`, { token: tech })).status === 404);
   const techId = (await api('GET', '/users?role=TECHNICIAN', { token: admin })).json.data[0].id;
   const jobId = od1.installationJob.id;
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  const tomorrow = new Date(Date.now() + 86400000).toLocaleDateString('en-CA');
   check('P2 job date in the past 400', (await api('PATCH', `/jobs/${jobId}/assign`, { token: staff, body: { crewLeadId: techId, scheduledDate: '2020-01-01' } })).status === 400);
   check('P2 other staff cannot assign job 404', (await api('PATCH', `/jobs/${jobId}/assign`, { token: other, body: { crewLeadId: techId, scheduledDate: tomorrow } })).status === 404);
   const assignJ = await api('PATCH', `/jobs/${jobId}/assign`, { token: staff, body: { crewLeadId: techId, scheduledDate: tomorrow } });
