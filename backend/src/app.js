@@ -9,7 +9,18 @@ const routes = require('./routes');
 
 const app = express();
 
-app.use(cors({ origin: corsOrigins }));
+// CORS: the configured origins, plus any localhost / 127.0.0.1 port in development
+// (Vite moves to 5174, 5175 ... when 5173 is busy).
+const LOCAL_ORIGIN = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin || corsOrigins.includes(origin)) return cb(null, true); // same-origin / curl / Postman
+      if (nodeEnv !== 'production' && LOCAL_ORIGIN.test(origin)) return cb(null, true);
+      return cb(null, false);
+    },
+  }),
+);
 app.use(express.json({ limit: '1mb' }));
 if (nodeEnv !== 'test') app.use(morgan('dev'));
 
