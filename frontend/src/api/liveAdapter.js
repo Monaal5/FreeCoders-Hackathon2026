@@ -103,7 +103,47 @@ export function adaptRequest(method, url, data, params) {
     };
   }
 
-  // Everything else (login, qualify, lost, quote status): snake_case -> camelCase
+  // Phase 2: Payments
+  else if (/^\/orders\/\d+\/payments$/.test(url) && method === 'post') {
+    body = {
+      amount: Number(data?.amount),
+      type: data?.type || 'ADVANCE',
+      mode: data?.mode || 'UPI',
+      reference: data?.reference || undefined,
+    };
+  }
+
+  // Phase 2: Stock Receive
+  else if (url === '/inventory/receive' && method === 'post') {
+    body = {
+      productId: Number(data?.product_id || data?.productId),
+      quantity: data?.quantity !== undefined ? Number(data.quantity) : undefined,
+      serials: Array.isArray(data?.serials) ? data.serials : undefined,
+    };
+  }
+
+  // Phase 2: Scan
+  else if (/^\/orders\/\d+\/scan$/.test(url) && method === 'post') {
+    body = { serialNumber: data?.serial_number || data?.serialNumber };
+  }
+
+  // Phase 2: Dispatch
+  else if (/^\/orders\/\d+\/dispatch$/.test(url) && method === 'post') {
+    body = {
+      vehicleNo: data?.vehicle_no || data?.vehicleNo,
+      driverName: data?.driver_name || data?.driverName,
+    };
+  }
+
+  // Phase 2: Assign Job
+  else if (/^\/jobs\/\d+\/assign$/.test(url) && method === 'patch') {
+    body = {
+      crewLeadId: Number(data?.crew_lead_id || data?.crewLeadId),
+      scheduledDate: data?.scheduled_date || data?.scheduledDate,
+    };
+  }
+
+  // Everything else: snake_case -> camelCase
   else if (data && !(data instanceof FormData)) {
     body = camelizeKeys(data);
   }

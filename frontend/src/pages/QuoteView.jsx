@@ -14,7 +14,8 @@ import {
   Building,
   Phone,
   Mail,
-  Award
+  Award,
+  Package
 } from 'lucide-react';
 
 export default function QuoteView() {
@@ -23,6 +24,7 @@ export default function QuoteView() {
   const navigate = useNavigate();
 
   const [quote, setQuote] = useState(null);
+  const [associatedOrder, setAssociatedOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
@@ -33,6 +35,16 @@ export default function QuoteView() {
       const res = await apiClient.get(`/api/quotes/${id}`);
       if (res.success) {
         setQuote(res.data);
+        if (res.data?.status === 'ACCEPTED') {
+          try {
+            const ordersRes = await apiClient.get('/api/orders');
+            const ordersList = Array.isArray(ordersRes?.data) ? ordersRes.data : Array.isArray(ordersRes) ? ordersRes : [];
+            const found = ordersList.find((o) => Number(o.quote_id) === Number(id));
+            if (found) setAssociatedOrder(found);
+          } catch (e) {
+            console.log('Order lookup error:', e);
+          }
+        }
       } else {
         setError(res.error?.message || 'Quote not found');
       }
@@ -191,22 +203,31 @@ export default function QuoteView() {
 
       {/* Won Notification Banner */}
       {isWon && (
-        <div className="no-print bg-gradient-to-r from-emerald-500 to-green-600 text-white p-4 rounded-2xl shadow-md flex items-center justify-between">
+        <div className="no-print bg-gradient-to-r from-emerald-500 to-green-600 text-white p-4 rounded-2xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Award className="w-6 h-6 shrink-0" />
             <div>
-              <div className="font-extrabold text-sm">Deal Closed Won!</div>
+              <div className="font-extrabold text-sm">Deal Closed Won! Order Created Automatically.</div>
               <div className="text-xs text-emerald-100">
-                Customer accepted the proposal. Lead status updated to WON.
+                Customer accepted proposal. Lead status updated to WON and Phase 2 fulfillment order is active.
               </div>
             </div>
           </div>
-          <Link
-            to={`/leads/${quote.lead_id}`}
-            className="px-3 py-1.5 bg-white text-emerald-800 text-xs font-bold rounded-xl shadow-xs hover:bg-emerald-50 transition"
-          >
-            View Lead Dossier →
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              to={associatedOrder ? `/orders/${associatedOrder.id}` : '/orders'}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white text-emerald-800 text-xs font-black rounded-xl shadow-xs hover:bg-emerald-50 transition whitespace-nowrap"
+            >
+              <Package className="w-3.5 h-3.5" />
+              <span>{associatedOrder ? `Go to Order ${associatedOrder.order_number} →` : 'Manage Order & Advance →'}</span>
+            </Link>
+            <Link
+              to={`/leads/${quote.lead_id}`}
+              className="px-3 py-1.5 bg-emerald-700/60 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition whitespace-nowrap"
+            >
+              Lead Dossier
+            </Link>
+          </div>
         </div>
       )}
 
