@@ -7,7 +7,6 @@ import ActivityTimeline from '../components/ActivityTimeline';
 import Modal from '../components/Modal';
 import { formatCurrency, formatDate, formatDateTime, formatKW } from '../utils/formatters';
 import { LEAD_STATUS, STATUS_CONFIG } from '../utils/leadStatus';
-import confetti from 'canvas-confetti';
 import {
   ArrowLeft,
   User,
@@ -51,7 +50,7 @@ export default function LeadDetail() {
     suggested_kw: 3.0,
     sanctioned_load_kw: 4.0,
     monthly_units: 360,
-    roof_viability: 'HIGH',
+    roof_viability: '',
     notes: '',
   });
 
@@ -84,7 +83,7 @@ export default function LeadDetail() {
           suggested_kw: res.data.suggested_kw || Number(estKW),
           sanctioned_load_kw: (Number(estKW) * 1.2).toFixed(1),
           monthly_units: Math.round(Number(estKW) * 120),
-          roof_viability: 'HIGH',
+          roof_viability: res.data.qualification_data?.roof_viability || '',
           notes: 'Customer is keen on rooftop solar to reduce electricity charges.',
         });
       } else {
@@ -129,6 +128,10 @@ export default function LeadDetail() {
   // 1. Submit Qualify
   const handleQualifySubmit = async (e) => {
     e.preventDefault();
+    if (!qualifyForm.roof_viability) {
+      alert('Please select a Roof Viability assessment option.');
+      return;
+    }
     setActionLoading(true);
     try {
       const res = await apiClient.patch(`/api/leads/${id}/qualify`, qualifyForm);
@@ -174,9 +177,6 @@ export default function LeadDetail() {
 
       if (res.success) {
         setReviewModalOpen(false);
-        if (decision === 'APPROVED') {
-          confetti({ particleCount: 70, spread: 50 });
-        }
         fetchLead();
       }
     } catch (err) {
@@ -461,7 +461,7 @@ export default function LeadDetail() {
                 <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
                   <div className="text-xs text-slate-400 font-medium">Roof Viability</div>
                   <div className="text-sm font-bold text-emerald-600 mt-1">
-                    {lead.qualification_data.roof_viability || 'HIGH'}
+                    {lead.qualification_data.roof_viability || '—'}
                   </div>
                 </div>
               </div>
@@ -701,13 +701,15 @@ export default function LeadDetail() {
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-              Roof Viability Assessment
+              Roof Viability Assessment *
             </label>
             <select
+              required
               value={qualifyForm.roof_viability}
               onChange={(e) => setQualifyForm({ ...qualifyForm, roof_viability: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm"
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
             >
+              <option value="">-- Select Roof Viability --</option>
               <option value="HIGH">High (Unobstructed flat roof / Good tilt)</option>
               <option value="MEDIUM">Medium (Minor parapet shadow)</option>
               <option value="LOW">Low (Heavy shading, needs special structure)</option>

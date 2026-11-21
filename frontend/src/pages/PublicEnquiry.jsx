@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { apiClient } from '../api/client';
 import { Sun, CheckCircle2, Zap, Home, ShieldCheck, ArrowRight, IndianRupee } from 'lucide-react';
-import confetti from 'canvas-confetti';
 
 export default function PublicEnquiry() {
   const [formData, setFormData] = useState({
@@ -44,11 +43,6 @@ export default function PublicEnquiry() {
       if (res.success) {
         setSubmitted(true);
         setLeadResult(res.data);
-        confetti({
-          particleCount: 80,
-          spread: 60,
-          origin: { y: 0.6 },
-        });
       } else {
         setError(res.error?.message || 'Failed to submit enquiry');
       }

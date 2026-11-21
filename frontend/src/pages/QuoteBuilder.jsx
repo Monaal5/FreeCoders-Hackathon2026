@@ -3,7 +3,6 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import { formatCurrency, formatKW } from '../utils/formatters';
 import { LEAD_STATUS } from '../utils/leadStatus';
-import confetti from 'canvas-confetti';
 import {
   ArrowLeft,
   FileText,
@@ -109,7 +108,6 @@ export default function QuoteBuilder() {
 
       const res = await apiClient.post(`/api/leads/${leadId}/quotes`, payload);
       if (res.success) {
-        confetti({ particleCount: 75, spread: 60 });
         navigate(`/quotes/${res.data.id}`);
       }
     } catch (err) {

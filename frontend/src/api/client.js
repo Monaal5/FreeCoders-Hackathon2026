@@ -282,7 +282,7 @@ async function mockRequest(method, url, data = null, params = null) {
       suggested_kw: lead.suggested_kw,
       sanctioned_load_kw: data.sanctioned_load_kw || (lead.suggested_kw * 1.2).toFixed(1),
       monthly_units: data.monthly_units || Math.round(lead.suggested_kw * 120),
-      roof_viability: data.roof_viability || 'HIGH',
+      roof_viability: data.roof_viability || null,
       qualifier_notes: data.notes || 'Qualified based on consumption analysis.',
     };
 

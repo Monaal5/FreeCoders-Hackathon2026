@@ -14,7 +14,6 @@ import {
   HardHat,
   Sun
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
 
 export default function SurveyForm() {
   const { id } = useParams();
@@ -121,7 +120,6 @@ export default function SurveyForm() {
 
       const res = await apiClient.patch(`/api/surveys/${id}/submit`, payload);
       if (res.success) {
-        confetti({ particleCount: 60, spread: 45 });
         alert('Survey submitted successfully! Lead has advanced to SURVEY_SUBMITTED for Admin review.');
         navigate('/surveys');
       }

@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { apiClient, openQuotePdf, isMockMode } from '../api/client';
 import { formatCurrency, formatDate, formatKW } from '../utils/formatters';
-import confetti from 'canvas-confetti';
 import {
   ArrowLeft,
   Printer,
@@ -60,11 +59,6 @@ export default function QuoteView() {
       const res = await apiClient.patch(`/api/quotes/${id}/status`, { status: newStatus });
       if (res.success) {
         if (newStatus === 'ACCEPTED') {
-          confetti({
-            particleCount: 100,
-            spread: 70,
-            origin: { y: 0.6 },
-          });
           alert('🎉 Congratulations! Customer accepted the quote. Lead is now WON!');
         }
         fetchQuote();
