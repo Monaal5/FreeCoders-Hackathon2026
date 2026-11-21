@@ -138,6 +138,9 @@ CREATE TABLE IF NOT EXISTS installation_jobs (
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_crew_date ON installation_jobs(crew_lead_id, scheduled_date);
+-- job completion (also added to existing databases by migrations/003_job_completion.sql)
+ALTER TABLE installation_jobs ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+ALTER TABLE installation_jobs ADD COLUMN IF NOT EXISTS completed_by BIGINT REFERENCES users(id);
 DROP TRIGGER IF EXISTS trg_jobs_updated ON installation_jobs;
 CREATE TRIGGER trg_jobs_updated BEFORE UPDATE ON installation_jobs FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 

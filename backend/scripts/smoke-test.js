@@ -248,6 +248,8 @@ async function api(method, url, { token, body, form } = {}) {
   check('P2 assign crew lead + date', assignJ.status === 200 && assignJ.json.data.crewLeadId === techId && assignJ.json.data.scheduledDate === tomorrow, assignJ.json);
   const techJobs = (await api('GET', `/jobs?from=${tomorrow}&to=${tomorrow}`, { token: tech })).json.data;
   check('P2 technician sees own job', techJobs.length === 1 && techJobs[0].id === jobId && techJobs[0].customerName, techJobs);
+  const earlyDone = await api('POST', `/jobs/${jobId}/complete`, { token: tech, body: { remarks: 'too early' } });
+  check('P3 complete installation before delivery 409', earlyDone.status === 409 && earlyDone.json.error.code === 'INVALID_ORDER_STATUS', earlyDone.json);
   const deliv = await api('POST', `/orders/${oid}/deliver`, { token: tech });
   check('P2 crew lead confirms delivery: 8 warranties start', deliv.status === 200 && deliv.json.data.order.status === 'DELIVERED' && deliv.json.data.warrantiesStarted === 8, deliv.json);
   const od2 = (await api('GET', `/orders/${oid}`, { token: staff })).json.data;
@@ -260,6 +262,17 @@ async function api(method, url, { token, body, form } = {}) {
   check('P2 balance payment closes the account', bal.json.data?.payment.type === 'BALANCE' && bal.json.data.balanceDue === 0, bal.json);
   check('P2 nothing left to pay 409', (await pay({ amount: 1, mode: 'CASH' })).json?.error?.code === 'ALREADY_PAID');
   console.log('   order:', od2.orderNumber, '| paid', od2.amountPaid, 'of', od2.totalAmount, '| warranties', od2.warranties.length);
+
+  // installation completion (job -> COMPLETED, order -> INSTALLED, delivered serials -> INSTALLED)
+  check('P3 other staff cannot complete the job 404', (await api('POST', `/jobs/${jobId}/complete`, { token: other, body: {} })).status === 404);
+  check('P3 a technician who is not crew lead gets 404', (await api('POST', `/jobs/99999/complete`, { token: tech, body: {} })).status === 404);
+  const done = await api('POST', `/jobs/${jobId}/complete`, { token: tech, body: { remarks: 'Commissioned, net meter pending' } });
+  check('P3 crew lead completes installation', done.status === 200 && done.json.data.status === 'COMPLETED' && done.json.data.completedAt && done.json.data.unitsInstalled === 8, done.json);
+  const od3 = (await api('GET', `/orders/${oid}`, { token: staff })).json.data;
+  check('P3 order INSTALLED, all serials INSTALLED', od3.status === 'INSTALLED' && od3.serials.every((s) => s.status === 'INSTALLED') && od3.installationJob.status === 'COMPLETED', [od3.status, od3.serials.map((s) => s.status)]);
+  const doneAgain = await api('POST', `/jobs/${jobId}/complete`, { token: staff, body: {} });
+  check('P3 complete twice 409', doneAgain.status === 409 && doneAgain.json.error.code === 'JOB_ALREADY_COMPLETED', doneAgain.json);
+  check('P3 warranties unaffected by installation', od3.warranties.length === 8);
 
   // reject path on seeded SURVEY_SUBMITTED lead + lost
   const seeded = (await api('GET', '/leads?status=SURVEY_SUBMITTED', { token: admin })).json.data.items[0];
