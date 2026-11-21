@@ -37,6 +37,13 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (err) => {
+    // API errors are { success:false, error:{ code, message } }; some pages read data.message /
+    // data.code directly, so expose both shapes and every screen shows the server's real reason.
+    const body = err.response?.data;
+    if (body?.error && typeof body === 'object') {
+      if (body.message === undefined) body.message = body.error.message;
+      if (body.code === undefined) body.code = body.error.code;
+    }
     const isLogin = err.config?.url?.includes('/auth/login');
     if (err.response?.status === 401 && !isLogin) {
       localStorage.removeItem(TOKEN_KEY);
@@ -1180,7 +1187,7 @@ async function liveRequest(method, url, data, config = {}) {
     ...config,
     method,
     url: req.url,
-    data: req.data,
+    data: req.data ?? undefined, // never send a literal "null" body (the server's JSON parser rejects it)
     params: req.params,
     headers: { ...(config.headers || {}), ...(req.headers || {}) },
   });

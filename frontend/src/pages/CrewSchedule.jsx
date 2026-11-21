@@ -43,9 +43,8 @@ export default function CrewSchedule() {
       // In mock DB or live, get users
       try {
         const usersRes = await api.get('/users');
-        const techs = (usersRes.data || []).filter(
-          (u) => u.role?.toUpperCase() === 'TECHNICIAN' || u.role?.toUpperCase() === 'STAFF'
-        );
+        // crew lead must be a technician (the API rejects anyone else)
+        const techs = (usersRes.data || []).filter((u) => u.role?.toUpperCase() === 'TECHNICIAN');
         setTechnicians(techs);
       } catch (e) {
         // Fallback default technicians

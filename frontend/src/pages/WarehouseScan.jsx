@@ -1,7 +1,62 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Html5Qrcode } from 'html5-qrcode';
-import api from '../api/client';
+import api, { isMockMode } from '../api/client';
+
+// Static classes so Tailwind keeps them in the build
+const DEMO_TONES = {
+  rose: { box: 'bg-rose-50 hover:bg-rose-100 border-rose-200 text-rose-900', accent: 'text-rose-600', mono: 'text-rose-700/80' },
+  indigo: { box: 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200 text-indigo-900', accent: 'text-indigo-600', mono: 'text-indigo-700/80' },
+  emerald: { box: 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-900', accent: 'text-emerald-600', mono: 'text-emerald-700/80' },
+  amber: { box: 'bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-900', accent: 'text-amber-600', mono: 'text-amber-700/80' },
+};
+
+// Offline mock data uses its own sample serials
+const MOCK_DEMO_SCANS = [
+  { serial: 'BAT-LIFE-5K-0003', label: '⚡ Demo Conflict (409)', tag: 'Reserved', note: 'Tests rule: Battery already reserved for ORD-0003', tone: 'rose' },
+  { serial: 'INV-HYB-5K-0001', label: '✓ Valid Inverter', tag: 'In Stock', note: 'Reserves SolarEdge 5kW unit', tone: 'indigo' },
+  { serial: 'BAT-LIFE-5K-0001', label: '✓ Valid Battery', tag: 'In Stock', note: 'Reserves Luminous Li-5000 unit', tone: 'emerald' },
+  { serial: 'PANEL-MONO-540-0001', label: '✓ Valid Panel', tag: 'In Stock', note: 'Reserves Adani Mono PERC', tone: 'amber' },
+];
+
+const CATEGORY_TONE = { INVERTER: 'indigo', BATTERY: 'emerald', PANEL: 'amber' };
+
+/** Live mode: real serials – one already taken elsewhere (409 demo) + a free unit for each open line. */
+async function buildLiveDemoScans(orderId, lines) {
+  const out = [];
+  const taken = (status) =>
+    api
+      .get('/inventory/serials', { params: { status } })
+      .then((r) => (r.data || []).find((s) => String(s.order_id) !== String(orderId)))
+      .catch(() => null);
+  const conflict = (await taken('RESERVED')) || (await taken('DISPATCHED'));
+  if (conflict) {
+    out.push({
+      serial: conflict.serial_number,
+      label: '⚡ Demo Conflict (409)',
+      tag: conflict.status,
+      note: `Already ${conflict.status.toLowerCase()}${conflict.order_number ? ` for ${conflict.order_number}` : ''}`,
+      tone: 'rose',
+    });
+  }
+  const open = lines.filter((l) => l.product?.is_serialized && Number(l.qty_scanned) < Number(l.qty_required)).slice(0, 3);
+  for (const l of open) {
+    const free = await api
+      .get('/inventory/serials', { params: { productId: l.product_id, status: 'IN_STOCK' } })
+      .then((r) => (r.data || [])[0])
+      .catch(() => null);
+    if (free) {
+      out.push({
+        serial: free.serial_number,
+        label: `✓ Valid ${(l.product.category || 'item').toLowerCase()}`,
+        tag: 'In Stock',
+        note: `Reserves ${l.product.name}`,
+        tone: CATEGORY_TONE[l.product.category] || 'indigo',
+      });
+    }
+  }
+  return out;
+}
 import {
   QrCode,
   ArrowLeft,
@@ -58,6 +113,20 @@ export default function WarehouseScan() {
   useEffect(() => {
     fetchOrderAndPickList();
   }, [id]);
+
+  // Sample serials for the demo buttons (refreshed whenever the pick list changes)
+  const [demoScans, setDemoScans] = useState([]);
+  useEffect(() => {
+    if (isMockMode()) {
+      setDemoScans(MOCK_DEMO_SCANS);
+      return;
+    }
+    let cancelled = false;
+    buildLiveDemoScans(id, pickList).then((list) => !cancelled && setDemoScans(list));
+    return () => {
+      cancelled = true;
+    };
+  }, [id, pickList]);
 
   // Focus input on load
   useEffect(() => {
@@ -354,7 +423,7 @@ export default function WarehouseScan() {
                     type="text"
                     value={serialInput}
                     onChange={(e) => setSerialInput(e.target.value.toUpperCase())}
-                    placeholder="Scan barcode or type serial (e.g. INV-HYB-5K-0001)..."
+                    placeholder={`Scan barcode or type serial${demoScans[1] ? ` (e.g. ${demoScans[1].serial})` : ""}...`}
                     className="w-full pl-3 pr-3 py-2.5 text-sm font-mono font-bold tracking-wider rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 uppercase placeholder:normal-case placeholder:font-normal placeholder:tracking-normal placeholder:text-slate-400"
                   />
                 </div>
@@ -407,79 +476,30 @@ export default function WarehouseScan() {
                 <Sparkles className="w-3.5 h-3.5 text-amber-500" />
                 <span>Demo Shortcuts (1-Click Sample Scans)</span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                {/* 409 Demo Button */}
-                <button
-                  type="button"
-                  onClick={() => handleScanSerial('BAT-LIFE-5K-0003')}
-                  className="p-2 text-left rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-900 transition group"
-                >
-                  <div className="font-bold flex items-center justify-between">
-                    <span>⚡ Demo Conflict (409)</span>
-                    <span className="text-[10px] font-mono text-rose-600">Reserved</span>
-                  </div>
-                  <div className="text-[11px] text-rose-700/80 font-mono mt-0.5">
-                    BAT-LIFE-5K-0003
-                  </div>
-                  <div className="text-[10px] text-rose-600 mt-0.5">
-                    Tests rule: Battery already reserved for ORD-0003
-                  </div>
-                </button>
-
-                {/* Valid Inverter Button */}
-                <button
-                  type="button"
-                  onClick={() => handleScanSerial('INV-HYB-5K-0001')}
-                  className="p-2 text-left rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-900 transition"
-                >
-                  <div className="font-bold flex items-center justify-between">
-                    <span>✓ Valid Inverter</span>
-                    <span className="text-[10px] font-mono text-indigo-600">In Stock</span>
-                  </div>
-                  <div className="text-[11px] text-indigo-700/80 font-mono mt-0.5">
-                    INV-HYB-5K-0001
-                  </div>
-                  <div className="text-[10px] text-indigo-600 mt-0.5">
-                    Reserves SolarEdge 5kW unit
-                  </div>
-                </button>
-
-                {/* Valid Battery Button */}
-                <button
-                  type="button"
-                  onClick={() => handleScanSerial('BAT-LIFE-5K-0001')}
-                  className="p-2 text-left rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 transition"
-                >
-                  <div className="font-bold flex items-center justify-between">
-                    <span>✓ Valid Battery</span>
-                    <span className="text-[10px] font-mono text-emerald-600">In Stock</span>
-                  </div>
-                  <div className="text-[11px] text-emerald-700/80 font-mono mt-0.5">
-                    BAT-LIFE-5K-0001
-                  </div>
-                  <div className="text-[10px] text-emerald-600 mt-0.5">
-                    Reserves Luminous Li-5000 unit
-                  </div>
-                </button>
-
-                {/* Valid Panel Button */}
-                <button
-                  type="button"
-                  onClick={() => handleScanSerial('PANEL-MONO-540-0001')}
-                  className="p-2 text-left rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 transition"
-                >
-                  <div className="font-bold flex items-center justify-between">
-                    <span>✓ Valid Panel</span>
-                    <span className="text-[10px] font-mono text-amber-600">In Stock</span>
-                  </div>
-                  <div className="text-[11px] text-amber-700/80 font-mono mt-0.5">
-                    PANEL-MONO-540-0001
-                  </div>
-                  <div className="text-[10px] text-amber-600 mt-0.5">
-                    Reserves Adani Mono PERC
-                  </div>
-                </button>
-              </div>
+              {demoScans.length === 0 ? (
+                <p className="text-[11px] text-slate-400">No sample serials needed: every serialized line is scanned.</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  {demoScans.map((d) => {
+                    const tone = DEMO_TONES[d.tone] || DEMO_TONES.indigo;
+                    return (
+                      <button
+                        key={d.serial}
+                        type="button"
+                        onClick={() => handleScanSerial(d.serial)}
+                        className={`p-2 text-left rounded-xl border transition ${tone.box}`}
+                      >
+                        <div className="font-bold flex items-center justify-between">
+                          <span>{d.label}</span>
+                          <span className={`text-[10px] font-mono ${tone.accent}`}>{d.tag}</span>
+                        </div>
+                        <div className={`text-[11px] font-mono mt-0.5 ${tone.mono}`}>{d.serial}</div>
+                        <div className={`text-[10px] mt-0.5 ${tone.accent}`}>{d.note}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
 

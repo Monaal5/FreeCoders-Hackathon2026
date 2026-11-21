@@ -107,7 +107,8 @@ export function adaptRequest(method, url, data, params) {
   else if (/^\/orders\/\d+\/payments$/.test(url) && method === 'post') {
     body = {
       amount: Number(data?.amount),
-      type: data?.type || 'ADVANCE',
+      // no type -> the server infers it (ADVANCE before confirmation / FULL / BALANCE after)
+      type: data?.type || undefined,
       mode: data?.mode || 'UPI',
       reference: data?.reference || undefined,
     };
@@ -229,6 +230,87 @@ function normalizeTemplate(t) {
   };
 }
 
+// ---------- Phase 2 (orders, inventory, jobs): real API -> fields the Phase 2 pages read ----------
+// Pick-list line: pages read item.product.{sku,name,category,is_serialized} + qty + scanned_serials
+function normalizePickLine(l) {
+  // bulk lines are not scanned: show them as picked when there is enough stock (server re-checks at dispatch)
+  const bulkReady = !l.is_serialized && l.ready;
+  return {
+    ...l,
+    qty_scanned: bulkReady ? l.qty_required : l.qty_scanned,
+    product_name: l.name,
+    scanned_serials: l.scanned_serials || [],
+    product: { id: l.product_id, sku: l.sku, name: l.name, category: l.category, is_serialized: l.is_serialized, unit: l.unit },
+  };
+}
+// API returns { lines, complete, ... }; pages expect a plain array of lines
+const pickLines = (pl) => (Array.isArray(pl) ? pl : pl?.lines || []).map(normalizePickLine);
+
+const leadFromFlat = (o) => ({
+  id: o.lead_id,
+  lead_code: o.lead_code,
+  customer_name: o.customer_name,
+  phone: o.phone,
+  address: o.address,
+  city: o.city,
+  pincode: o.pincode,
+});
+
+function normalizeOrder(o) {
+  if (!o) return o;
+  const out = { ...o, lead: o.lead || leadFromFlat(o) };
+  if (o.pick_list !== undefined) {
+    out.pick_list = pickLines(o.pick_list);
+    out.pick_list_summary = Array.isArray(o.pick_list) ? null : { ...o.pick_list, lines: undefined };
+  }
+  if (o.serials) out.scanned_serials = o.serials;
+  if (o.installation_job !== undefined) out.job = o.installation_job;
+  if (o.warranties) out.warranties = o.warranties.map((w) => ({ ...w, product_name: w.name }));
+  if (o.payments) out.payments = o.payments.map((p) => ({ ...p, received_by: p.received_by_name || p.received_by }));
+  return out;
+}
+
+const normalizeProduct = (p) => ({
+  ...p,
+  is_low_stock: p.low_stock,
+  effective_stock: p.available,
+  in_stock_serials_count: p.serials_in_stock,
+  reserved_serials_count: p.serials_reserved,
+});
+
+const normalizeSerial = (s) => ({ ...s, product_name: s.name });
+
+const normalizeJob = (j) => ({
+  ...j,
+  system_type: j.package_kind,
+  lead: leadFromFlat(j),
+  order: { id: j.order_id, order_number: j.order_number, status: j.order_status },
+});
+
+function adaptPhase2(method, url, data) {
+  if (url === '/orders' && method === 'get') return data.map(normalizeOrder);
+  if (/^\/orders\/\d+$/.test(url)) return normalizeOrder(data);
+  if (/^\/orders\/\d+\/pick-list$/.test(url)) return pickLines(data);
+  if (/^\/orders\/\d+\/scan(\/.+)?$/.test(url)) {
+    // scan -> { scanned, pick_list }, undo -> { released, pick_list }
+    return { ...data, item: data.scanned || data.released, pick_list: pickLines(data.pick_list) };
+  }
+  if (/^\/orders\/\d+\/(payments|dispatch|deliver)$/.test(url)) {
+    return { ...data, order: normalizeOrder(data.order) };
+  }
+  if (url === '/inventory' && method === 'get') return data.map(normalizeProduct);
+  if (url === '/inventory/receive') {
+    return {
+      ...data,
+      serialsCount: data.serials ? data.received : undefined,
+      product: { sku: data.product, stock_qty: data.stock_qty },
+    };
+  }
+  if (url === '/inventory/serials') return data.map(normalizeSerial);
+  if (url === '/jobs' && method === 'get') return data.map(normalizeJob);
+  return undefined;
+}
+
 /** body = backend envelope { success, data }; returns the envelope in the shape pages expect. */
 export function adaptResponse(method, url, body) {
   if (!body || body.success === false || body.data === undefined) return body;
@@ -248,5 +330,7 @@ export function adaptResponse(method, url, body) {
   if (/^\/leads\/\d+\/quotes$/.test(url) || /^\/quotes\/\d+(\/status)?$/.test(url)) {
     return { ...body, data: normalizeQuote(data) };
   }
+  const phase2 = adaptPhase2(method, url, data);
+  if (phase2 !== undefined) return { ...body, data: phase2 };
   return { ...body, data };
 }

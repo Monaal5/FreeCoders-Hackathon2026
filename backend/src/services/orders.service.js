@@ -63,6 +63,8 @@ async function pickList(db, orderId) {
   const { rows } = await db.query(
     `SELECT pl.id, pl.product_id, p.sku, p.name, p.unit, p.category, pl.is_serialized,
             pl.qty_required, pl.qty_scanned,
+            ARRAY(SELECT i.serial_number FROM inventory_items i
+                   WHERE i.order_id = pl.order_id AND i.product_id = pl.product_id ORDER BY i.serial_number) AS scanned_serials,
             CASE WHEN pl.is_serialized
                  THEN (SELECT count(*) FROM inventory_items i WHERE i.product_id = p.id AND i.status = 'IN_STOCK')
                  ELSE p.stock_qty END AS available,
@@ -86,11 +88,12 @@ async function pickList(db, orderId) {
 // ---------------------------------------------------------------------------------------------
 // Read
 // ---------------------------------------------------------------------------------------------
-async function listOrders({ status }, user) {
+async function listOrders({ status, q }, user) {
+  const search = q ? `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null; // escape LIKE wildcards
   const { rows } = await query(
-    `SELECT o.id, o.order_number, o.status, o.total_amount, o.advance_required, o.amount_paid,
+    `SELECT o.id, o.quote_id, o.order_number, o.status, o.total_amount, o.advance_required, o.amount_paid,
             o.total_amount - o.amount_paid AS balance_due, o.created_at, o.confirmed_at,
-            l.id AS lead_id, l.lead_code, l.customer_name, l.city, u.name AS assigned_to_name,
+            l.id AS lead_id, l.lead_code, l.customer_name, l.phone, l.city, u.name AS assigned_to_name,
             q.quote_number, j.scheduled_date AS job_date
        FROM orders o
        JOIN leads l  ON l.id = o.lead_id
@@ -99,14 +102,20 @@ async function listOrders({ status }, user) {
        LEFT JOIN installation_jobs j ON j.order_id = o.id
       WHERE ($1::order_status IS NULL OR o.status = $1)
         AND ($2::bigint IS NULL OR l.assigned_to = $2)
+        AND ($3::text IS NULL OR o.order_number ILIKE $3 OR l.customer_name ILIKE $3 OR l.city ILIKE $3 OR l.lead_code ILIKE $3)
       ORDER BY o.created_at DESC
       LIMIT 200`,
-    [status, isScopedStaff(user) ? user.id : null],
+    [status, isScopedStaff(user) ? user.id : null, search],
   );
   return rows;
 }
 
 async function getOrderDetail(orderId, user) {
+  if (user.role === 'TECHNICIAN') {
+    // a technician may open an order only when they are the crew lead of its installation job
+    const crew = await query('SELECT 1 FROM installation_jobs WHERE order_id = $1 AND crew_lead_id = $2', [orderId, user.id]);
+    if (!crew.rows.length) throw AppError.notFound('Order');
+  }
   const order = await loadOrder({ query }, orderId, user);
   const [lead, quote, payments, pick, serials, dispatch, job, warranties] = await Promise.all([
     query(`SELECT id, lead_code, customer_name, phone, email, address, city, state, pincode FROM leads WHERE id = $1`, [order.lead_id]),
@@ -123,7 +132,7 @@ async function getOrderDetail(orderId, user) {
     ),
     pickList({ query }, orderId),
     query(
-      `SELECT i.id, i.serial_number, i.status, p.sku, p.name, p.warranty_months, i.updated_at
+      `SELECT i.id, i.serial_number, i.status, i.product_id, p.sku, p.name, p.category, p.warranty_months, i.updated_at
          FROM inventory_items i JOIN products p ON p.id = i.product_id
         WHERE i.order_id = $1 ORDER BY p.sku, i.serial_number`,
       [orderId],
@@ -140,7 +149,7 @@ async function getOrderDetail(orderId, user) {
       [orderId],
     ),
     query(
-      `SELECT w.*, i.serial_number, p.sku, p.name FROM warranties w
+      `SELECT w.*, i.serial_number, p.sku, p.name, p.category FROM warranties w
          JOIN inventory_items i ON i.id = w.inventory_item_id JOIN products p ON p.id = i.product_id
         WHERE w.order_id = $1 ORDER BY p.sku, i.serial_number`,
       [orderId],

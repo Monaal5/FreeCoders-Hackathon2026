@@ -93,7 +93,7 @@ async function listSerials({ productId, status, q, orderId }) {
   const search = q ? `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
   const { rows } = await query(
     `SELECT i.id, i.serial_number, i.status, i.purchase_cost, i.received_at, i.updated_at,
-            p.id AS product_id, p.sku, p.name, o.id AS order_id, o.order_number,
+            p.id AS product_id, p.sku, p.name, p.category, o.id AS order_id, o.order_number,
             w.start_date AS warranty_start, w.end_date AS warranty_end
        FROM inventory_items i
        JOIN products p ON p.id = i.product_id

@@ -946,7 +946,8 @@ export default function OrderDetail() {
             </label>
             <input
               type="number"
-              min="1"
+              min="0.01"
+              step="0.01"
               required
               value={paymentAmount}
               onChange={(e) => setPaymentAmount(e.target.value)}

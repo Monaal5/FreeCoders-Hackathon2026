@@ -14,9 +14,9 @@ function parseSerial(value, field = 'serialNumber') {
   return s;
 }
 
-/** GET /api/orders?status=CONFIRMED */
+/** GET /api/orders?status=CONFIRMED&q=priya */
 async function list(req, res) {
-  ok(res, await ordersService.listOrders({ status: oneOf(req.query.status, ORDER_STATUSES, 'status') }, req.user));
+  ok(res, await ordersService.listOrders({ status: oneOf(req.query.status, ORDER_STATUSES, 'status'), q: optionalText(req.query.q, 60) }, req.user));
 }
 
 /** GET /api/orders/:id – order + payments + pick list + serials + dispatch + job + warranties */

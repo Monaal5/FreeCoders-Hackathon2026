@@ -9,7 +9,8 @@ const office = authorize(ROLES.ADMIN, ROLES.STAFF);
 router.use(authenticate);
 
 router.get('/', office, orders.list);
-router.get('/:id', office, orders.detail);
+// technicians may open an order only when they are its crew lead (checked in the service)
+router.get('/:id', authorize(ROLES.ADMIN, ROLES.STAFF, ROLES.TECHNICIAN), orders.detail);
 router.get('/:id/pick-list', office, orders.pickList);
 router.post('/:id/payments', office, orders.pay);
 router.post('/:id/scan', office, orders.scan);
