@@ -3,7 +3,9 @@
 // (it expects fresh seed data and adds its own test leads)
 const fs = require('node:fs');
 const path = require('node:path');
-const B = 'http://localhost:5000/api';
+// API_URL lets you run this against a separate test server/database, e.g. API_URL=http://localhost:5055
+const ORIGIN = process.env.API_URL || 'http://localhost:5000';
+const B = ORIGIN + '/api';
 let pass = 0, fail = 0;
 const check = (name, cond, extra) => { cond ? pass++ : fail++; console.log(`${cond ? 'PASS' : 'FAIL'} ${name}${!cond && extra !== undefined ? ' -> ' + JSON.stringify(extra).slice(0, 400) : ''}`); };
 
@@ -90,7 +92,7 @@ async function api(method, url, { token, body, form } = {}) {
   fd.append('photos', new Blob([png], { type: 'image/png' }), 'meter.png');
   const sub = await api('PATCH', `/surveys/${sv.json.data.id}/submit`, { token: tech, form: fd });
   check('submit survey', sub.status === 200 && sub.json.data.photos.length === 2, sub.json);
-  const img = await fetch('http://localhost:5000' + sub.json.data.photos[0]);
+  const img = await fetch(ORIGIN + sub.json.data.photos[0]);
   check('photo served', img.status === 200 && img.headers.get('content-type') === 'image/png');
 
   const staffReview = await api('PATCH', `/surveys/${sv.json.data.id}/review`, { token: staff, body: { decision: 'APPROVE' } });
@@ -100,14 +102,29 @@ async function api(method, url, { token, body, form } = {}) {
   const rv = await api('PATCH', `/surveys/${sv.json.data.id}/review`, { token: admin, body: { decision: 'APPROVE', note: 'OK' } });
   check('approve survey', rv.status === 200 && rv.json.data.status === 'APPROVED', rv.json);
 
-  const tpl = await api('GET', '/templates?systemType=ON_GRID&capacityKw=3', { token: staff });
-  check('template lookup', tpl.json.data.length === 1 && tpl.json.data[0].items.length === 10, tpl.json);
+  const allPkgs = (await api('GET', '/templates', { token: staff })).json.data;
+  const kinds = [...new Set(allPkgs.map((t) => t.kind))].join(',');
+  check('20 packages: panel set / on-grid / off-grid / installation x 1-5 kW', allPkgs.length === 20 && kinds === 'PANEL_SET,ON_GRID,OFF_GRID,INSTALLATION', kinds);
+  const sections = (t) => [...new Set(t.items.map((i) => i.section))];
+  const pick = (kind, kw) => allPkgs.find((t) => t.kind === kind && t.capacityKw === kw);
+  check('panel set = panels, connectors, wires', pick('PANEL_SET', 3).items.map((i) => i.sku).join() === 'PNL-540,MC4-PAIR,CAB-DC-4');
+  const on3 = pick('ON_GRID', 3), off3 = pick('OFF_GRID', 3);
+  check('on-grid has every part group', ['Solar Panels & Wiring', 'Inverter & Charge Control', 'Wiring Boxes & Switches', 'Safety & Earthing', 'Mounting Stands'].every((x) => sections(on3).includes(x)), sections(on3));
+  check('on-grid includes charge controller, isolator, earthing, stands', ['CC-MPPT-60', 'SW-DC-ISO', 'SW-AC-MCB', 'BOS-EARTH', 'BOS-LA', 'STR-GI', 'MC4-PAIR'].every((k) => on3.items.some((i) => i.sku === k)));
+  check('off-grid = on-grid parts + battery storage', sections(off3).includes('Battery Storage') && off3.items.length === on3.items.length + 3, [off3.items.length, on3.items.length]);
+  const tpl = await api('GET', '/templates?kind=ON_GRID&capacityKw=3', { token: staff });
+  check('template lookup by kind', tpl.json.data.length === 1 && tpl.json.data[0].items.length === 14, tpl.json);
   const otherQt = await api('POST', `/leads/${lead.id}/quotes`, { token: other, body: { templateId: tpl.json.data[0].id } });
   check('other staff create quote 404', otherQt.status === 404, otherQt.json);
   const qt = await api('POST', `/leads/${lead.id}/quotes`, { token: staff, body: { templateId: tpl.json.data[0].id, discountPct: 5 } });
   const d = qt.json?.data;
-  check('create quote', qt.status === 201 && d.items.length === 10 && d.quoteNumber, qt.json);
+  check('create quote: package + installation parts', qt.status === 201 && d.items.length === 16 && d.includesInstallation === true && d.quoteNumber, qt.json);
+  check('quote lines carry sections', d.items[0].section === 'Solar Panels & Wiring' && d.items[d.items.length - 1].section === 'Installation (Service)', d.items.map((i) => i.section));
   check('totals add up', Math.abs(d.subtotal - d.discountAmount + d.gstAmount - d.total) < 0.01, d);
+  const instAsMain = await api('POST', `/leads/${lead.id}/quotes`, { token: staff, body: { templateId: pick('INSTALLATION', 3).id } });
+  check('installation alone is not a package 400', instAsMain.status === 400, instAsMain.json);
+  const panelOnly = await api('POST', `/leads/${lead.id}/quotes`, { token: staff, body: { templateId: pick('PANEL_SET', 3).id, includeInstallation: false } });
+  check('revised quote: panel set only, no installation', panelOnly.status === 201 && panelOnly.json.data.items.length === 3 && panelOnly.json.data.includesInstallation === false && panelOnly.json.data.systemType === null, panelOnly.json);
   console.log('   quote', d.quoteNumber, 'subtotal', d.subtotal, 'disc', d.discountAmount, 'gst', d.gstAmount, 'total', d.total);
 
   const got = await api('GET', `/quotes/${d.id}`, { token: staff });

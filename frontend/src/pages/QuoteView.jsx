@@ -282,11 +282,19 @@ export default function QuoteView() {
               System Capacity: <span className="font-semibold text-slate-900">{formatKW(quote.capacity_kw)}</span>
             </div>
             <div className="text-slate-600 mt-0.5">
-              Type: <span className="font-semibold text-slate-900">{quote.system_type}</span>
+              Package:{' '}
+              <span className="font-semibold text-slate-900">
+                {{ PANEL_SET: 'Solar Panel Set (hardware)', ON_GRID: 'On-Grid System', OFF_GRID: 'Off-Grid System (with battery)' }[
+                  quote.package_kind
+                ] || quote.system_type}
+              </span>
             </div>
-            <div className="text-slate-600 mt-0.5">
-              Scope: Turnkey Supply, Fabrication, Wiring, Inverter & Net Metering
-            </div>
+            {quote.package_kind && (
+              <div className="text-slate-600 mt-0.5">
+                Installation by our crew:{' '}
+                <span className="font-semibold text-slate-900">{quote.includes_installation ? 'Included' : 'Not included'}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -308,8 +316,16 @@ export default function QuoteView() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {(quote.items || []).map((item, idx) => (
-                <tr key={idx}>
+              {(quote.items || []).map((item, idx, all) => (
+                <React.Fragment key={idx}>
+                {item.section && item.section !== all[idx - 1]?.section && (
+                  <tr className="bg-amber-50/70">
+                    <td colSpan={5} className="py-1.5 px-3 text-[10px] font-extrabold uppercase tracking-wider text-amber-700">
+                      {item.section}
+                    </td>
+                  </tr>
+                )}
+                <tr>
                   <td className="py-2.5 px-3 text-slate-400">{idx + 1}</td>
                   <td className="py-2.5 px-3 font-semibold text-slate-800">
                     {item.product_name}
@@ -325,6 +341,7 @@ export default function QuoteView() {
                     {formatCurrency(item.total_price)}
                   </td>
                 </tr>
+                </React.Fragment>
               ))}
             </tbody>
           </table>

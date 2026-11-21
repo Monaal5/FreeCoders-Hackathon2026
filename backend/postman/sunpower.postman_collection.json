@@ -731,12 +731,12 @@
       "name": "4. Quotes",
       "item": [
         {
-          "name": "List templates (with BOM + price)",
+          "name": "List packages (Panel Set / On-Grid / Off-Grid / Installation)",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/templates?systemType=ON_GRID",
+              "raw": "{{baseUrl}}/templates?kind=ON_GRID",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -745,7 +745,7 @@
               ],
               "query": [
                 {
-                  "key": "systemType",
+                  "key": "kind",
                   "value": "ON_GRID"
                 }
               ]
@@ -774,7 +774,7 @@
           ]
         },
         {
-          "name": "Create quote (lead must be SURVEY_APPROVED)",
+          "name": "Create quote from package (+ installation)",
           "request": {
             "method": "POST",
             "header": [
@@ -806,7 +806,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"templateId\": {{templateId}},\n  \"discountPct\": 5,\n  \"validDays\": 15,\n  \"notes\": \"Includes subsidy paperwork support\"\n}"
+              "raw": "{\n  \"templateId\": {{templateId}},\n  \"includeInstallation\": true,\n  \"discountPct\": 5,\n  \"validDays\": 15,\n  \"notes\": \"Includes subsidy paperwork support\"\n}"
             }
           },
           "event": [

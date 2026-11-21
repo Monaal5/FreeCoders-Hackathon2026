@@ -4,13 +4,22 @@ const { ok, created } = require('../utils/response');
 const AppError = require('../utils/AppError');
 const { toId, toNumber, oneOf, optionalText, requireFields } = require('../utils/validate');
 
-/** POST /api/leads/:id/quotes  { templateId, discountPct?, validDays?, notes? } */
+/**
+ * POST /api/leads/:id/quotes
+ * { templateId, includeInstallation? (default true), discountPct?, validDays?, notes? }
+ * templateId = a PANEL_SET / ON_GRID / OFF_GRID package; installation of the same kW is added on request.
+ */
 async function create(req, res) {
   requireFields(req.body, ['templateId']);
+  const inst = req.body.includeInstallation;
+  if (inst !== undefined && typeof inst !== 'boolean') {
+    throw AppError.badRequest('includeInstallation must be true or false', { field: 'includeInstallation' });
+  }
   const quote = await quotesService.createQuote(
     toId(req.params.id),
     {
       templateId: toId(req.body.templateId, 'templateId'),
+      includeInstallation: inst !== false,
       discountPct: toNumber(req.body.discountPct, 'discountPct', { min: 0, max: 30 }) ?? 0, // cap discounts at 30%
       validDays: toNumber(req.body.validDays, 'validDays', { min: 1, max: 90 }) ?? 15,
       notes: optionalText(req.body.notes, 1000),

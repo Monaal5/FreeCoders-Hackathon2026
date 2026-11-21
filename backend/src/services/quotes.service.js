@@ -27,11 +27,12 @@ function calculateTotals(items, discountPct = 0) {
 }
 
 /**
- * Creates a quote from a package template. Gate: lead must be SURVEY_APPROVED (first quote)
- * or QUOTED (revised quote) – anything else is 409. The template BOM is copied into
- * quote_items as a price snapshot, all in one transaction.
+ * Creates a quote from a ready-made package (Panel Set / On-Grid / Off-Grid) plus, optionally,
+ * the matching Installation service. Gate: lead must be SURVEY_APPROVED (first quote) or
+ * QUOTED (revised quote) – anything else is 409. Every part of the package(s) is copied into
+ * quote_items as a price snapshot (with its section), all in one transaction.
  */
-async function createQuote(leadId, { templateId, discountPct, notes, validDays }, actor) {
+async function createQuote(leadId, { templateId, includeInstallation, discountPct, notes, validDays }, actor) {
   return withTransaction(async (client) => {
     const lead = await assertLeadAccess(client, leadId, actor, { lock: true }); // 404 if not this staff's lead
     assertStatus(lead, [LEAD_STATUS.SURVEY_APPROVED, LEAD_STATUS.QUOTED], 'create a quote');
@@ -45,51 +46,75 @@ async function createQuote(leadId, { templateId, discountPct, notes, validDays }
     const tplRes = await client.query('SELECT * FROM package_templates WHERE id = $1 AND is_active', [templateId]);
     if (!tplRes.rows.length) throw AppError.notFound('Template');
     const template = tplRes.rows[0];
+    if (template.kind === 'INSTALLATION') {
+      throw AppError.badRequest('Pick a Panel Set, On-Grid or Off-Grid package; Installation is added with includeInstallation', {
+        field: 'templateId',
+      });
+    }
 
-    // BOM = template items x current catalogue prices
+    // Installation service of the same size, when requested
+    const templateIds = [template.id];
+    let installation = null;
+    if (includeInstallation) {
+      const inst = await client.query(
+        `SELECT * FROM package_templates WHERE kind = 'INSTALLATION' AND capacity_kw = $1 AND is_active`,
+        [template.capacity_kw],
+      );
+      if (!inst.rows.length) {
+        throw AppError.conflict(`No installation package for ${template.capacity_kw} kW`, 'NO_INSTALLATION_PACKAGE');
+      }
+      installation = inst.rows[0];
+      templateIds.push(installation.id);
+    }
+
+    // BOM = every part of the chosen package(s) x current catalogue prices
     const bomRes = await client.query(
       `SELECT p.id AS product_id, p.sku, p.name, p.category, p.unit, p.unit_price, p.gst_rate, ti.quantity,
-              round(ti.quantity * p.unit_price, 2) AS line_total
+              round(ti.quantity * p.unit_price, 2) AS line_total, ti.section, ti.sort_order
          FROM template_items ti
          JOIN products p ON p.id = ti.product_id
-        WHERE ti.template_id = $1
-        ORDER BY array_position($2::text[], p.category::text), p.sku`,
-      [templateId, CATEGORY_ORDER],
+        WHERE ti.template_id = ANY($1::bigint[])
+        ORDER BY ti.sort_order, p.sku`,
+      [templateIds],
     );
     const bom = bomRes.rows;
     if (!bom.length) throw AppError.conflict('Template has no BOM items', 'EMPTY_TEMPLATE');
 
     const totals = calculateTotals(bom, discountPct);
+    const packageName = installation ? `${template.name} + Installation` : template.name;
 
     const quoteRes = await client.query(
-      `INSERT INTO quotes (lead_id, survey_id, template_id, system_type, capacity_kw,
+      `INSERT INTO quotes (lead_id, survey_id, template_id, package_kind, system_type, includes_installation, capacity_kw,
                            subtotal, discount_pct, discount_amount, taxable_amount, gst_amount, total,
                            valid_until, notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, current_date + $12::int, $13, $14)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, current_date + $14::int, $15, $16)
        RETURNING *`,
       [
-        leadId, surveyRes.rows[0].id, template.id, template.system_type, template.capacity_kw,
-        totals.subtotal, discountPct, totals.discountAmount, totals.taxableAmount, totals.gstAmount, totals.total,
-        validDays, notes, actor.id,
+        leadId, surveyRes.rows[0].id, template.id, template.kind, template.system_type, !!installation,
+        template.capacity_kw, totals.subtotal, discountPct, totals.discountAmount, totals.taxableAmount,
+        totals.gstAmount, totals.total, validDays, notes, actor.id,
       ],
     );
     const quote = quoteRes.rows[0];
 
     // Snapshot the BOM in ONE statement using unnest() over parallel arrays
     const itemsRes = await client.query(
-      `INSERT INTO quote_items (quote_id, product_id, sku, name, category, unit, quantity, unit_price, gst_rate, line_total)
+      `INSERT INTO quote_items (quote_id, product_id, sku, name, category, unit, quantity, unit_price, gst_rate,
+                               line_total, section, sort_order)
        SELECT $1, * FROM unnest($2::bigint[], $3::text[], $4::text[], $5::product_category[], $6::text[],
-                                $7::numeric[], $8::numeric[], $9::numeric[], $10::numeric[])
+                                $7::numeric[], $8::numeric[], $9::numeric[], $10::numeric[], $11::text[], $12::int[])
        RETURNING *`,
       [
         quote.id,
         bom.map((i) => i.product_id), bom.map((i) => i.sku), bom.map((i) => i.name), bom.map((i) => i.category),
         bom.map((i) => i.unit), bom.map((i) => i.quantity), bom.map((i) => i.unit_price),
-        bom.map((i) => i.gst_rate), bom.map((i) => i.line_total),
+        bom.map((i) => i.gst_rate), bom.map((i) => i.line_total), bom.map((i) => i.section),
+        bom.map((i) => i.sort_order),
       ],
     );
+    itemsRes.rows.sort((a, b) => a.sort_order - b.sort_order || a.sku.localeCompare(b.sku));
 
-    const note = `Quote ${quote.quote_number} created: ${template.name}, total Rs ${totals.total.toLocaleString('en-IN')}`;
+    const note = `Quote ${quote.quote_number} created: ${packageName} (${bom.length} parts), total Rs ${totals.total.toLocaleString('en-IN')}`;
     if (lead.status === LEAD_STATUS.SURVEY_APPROVED) {
       await transitionLead(client, leadId, LEAD_STATUS.QUOTED, actor.id, note);
     } else {
@@ -99,14 +124,16 @@ async function createQuote(leadId, { templateId, discountPct, notes, validDays }
       );
     }
 
-    return { ...quote, template_name: template.name, items: itemsRes.rows };
+    return { ...quote, template_name: packageName, items: itemsRes.rows };
   });
 }
 
 async function getQuote(id, user) {
   const [quoteRes, itemsRes] = await Promise.all([
     query(
-      `SELECT q.*, l.assigned_to, t.name AS template_name, u.name AS created_by_name, u.phone AS created_by_phone,
+      `SELECT q.*, l.assigned_to,
+              t.name || CASE WHEN q.includes_installation THEN ' + Installation' ELSE '' END AS template_name,
+              u.name AS created_by_name, u.phone AS created_by_phone,
               l.lead_code, l.customer_name, l.phone AS customer_phone, l.email AS customer_email,
               l.address AS customer_address, l.city AS customer_city, l.state AS customer_state,
               l.pincode AS customer_pincode,
@@ -120,7 +147,7 @@ async function getQuote(id, user) {
     ),
     query(
       `SELECT * FROM quote_items WHERE quote_id = $1
-        ORDER BY array_position($2::text[], category::text), sku`,
+        ORDER BY sort_order, array_position($2::text[], category::text), sku`,
       [id, CATEGORY_ORDER],
     ),
   ]);

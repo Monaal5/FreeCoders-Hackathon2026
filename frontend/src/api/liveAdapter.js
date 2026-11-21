@@ -95,7 +95,12 @@ export function adaptRequest(method, url, data, params) {
 
   // Create quote
   else if (/^\/leads\/\d+\/quotes$/.test(url) && method === 'post') {
-    body = { templateId: data?.template_id, discountPct: data?.discount_percentage ?? 0, notes: data?.notes };
+    body = {
+      templateId: data?.template_id,
+      discountPct: data?.discount_percentage ?? 0,
+      notes: data?.notes,
+      ...(typeof data?.include_installation === 'boolean' ? { includeInstallation: data.include_installation } : {}),
+    };
   }
 
   // Everything else (login, qualify, lost, quote status): snake_case -> camelCase

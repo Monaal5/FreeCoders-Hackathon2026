@@ -9,6 +9,11 @@ const COMPANY = {
 };
 
 const BRAND = '#E8590C';
+const PACKAGE_LABEL = {
+  PANEL_SET: 'Solar Panel Set (hardware)',
+  ON_GRID: 'On-Grid System',
+  OFF_GRID: 'Off-Grid System (with battery)',
+};
 const MUTED = '#666666';
 const LINE = '#DDDDDD';
 
@@ -56,7 +61,8 @@ function renderQuotePdf(quote, stream) {
   doc.fillColor('#000').font('Helvetica-Bold').fontSize(11)
     .text(quote.template_name || `${quote.capacity_kw} kW ${quote.system_type}`, sx, y + 12, { width: colW });
   doc.font('Helvetica').fontSize(9)
-    .text(`Capacity: ${quote.capacity_kw} kWp  |  Type: ${quote.system_type === 'ON_GRID' ? 'On-Grid' : 'Off-Grid'}`, sx, doc.y, { width: colW })
+    .text(`Capacity: ${quote.capacity_kw} kWp  |  Package: ${PACKAGE_LABEL[quote.package_kind] || quote.system_type || '-'}`, sx, doc.y, { width: colW })
+    .text(`Installation by our crew: ${quote.includes_installation ? 'Included' : 'Not included'}`, sx, doc.y, { width: colW })
     .text(`Est. generation: ~${Math.round(quote.capacity_kw * 120)} units/month`, sx, doc.y, { width: colW });
 
   // ---- BOM table ----
@@ -71,22 +77,29 @@ function renderQuotePdf(quote, stream) {
     { key: 'Amount', w: width - 415, align: 'right' },
   ];
   const drawRow = (cells, rowY, { bold = false, fill } = {}) => {
-    const h = 18;
+    const h = 16;
     if (fill) doc.rect(left, rowY, width, h).fill(fill);
     doc.fillColor('#000').font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(8.5);
     let x = left;
     cells.forEach((c, i) => {
-      doc.text(String(c), x + 4, rowY + 5, { width: cols[i].w - 8, align: cols[i].align, lineBreak: false, ellipsis: true });
+      doc.text(String(c), x + 4, rowY + 4, { width: cols[i].w - 8, align: cols[i].align, lineBreak: false, ellipsis: true });
       x += cols[i].w;
     });
     return rowY + h;
   };
 
   y = drawRow(cols.map((c) => c.key), y, { bold: true, fill: '#FFF1E6' });
+  let currentSection = null;
   quote.items.forEach((item, idx) => {
-    if (y > doc.page.height - 200) {
+    if (y > doc.page.height - doc.page.margins.bottom - 34) { // only break when the page is really full
       doc.addPage();
       y = doc.page.margins.top;
+    }
+    if (item.section && item.section !== currentSection) {
+      currentSection = item.section;
+      doc.rect(left, y, width, 15).fill('#F3F4F6');
+      doc.fillColor(BRAND).font('Helvetica-Bold').fontSize(8.5).text(currentSection.toUpperCase(), left + 4, y + 4);
+      y += 15;
     }
     y = drawRow(
       [idx + 1, item.name, qty(item.quantity), item.unit, inr(item.unit_price).replace('Rs. ', ''), `${qty(item.gst_rate)}%`,
@@ -97,8 +110,12 @@ function renderQuotePdf(quote, stream) {
   });
   doc.moveTo(left, y).lineTo(right, y).strokeColor(LINE).stroke();
 
-  // ---- Totals ----
+  // ---- Totals ---- (move to a new page only if the totals + terms block will not fit)
   y += 10;
+  if (y > doc.page.height - doc.page.margins.bottom - 230) {
+    doc.addPage();
+    y = doc.page.margins.top;
+  }
   const tx = right - 230;
   const totalRow = (label, value, { bold = false, color = '#000' } = {}) => {
     doc.fillColor(color).font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(bold ? 11 : 9.5);
@@ -133,9 +150,12 @@ function renderQuotePdf(quote, stream) {
     doc.moveDown(0.5).fillColor('#000').font('Helvetica-Bold').text('Notes').font('Helvetica').fillColor(MUTED).text(quote.notes, { width });
   }
 
-  doc.moveDown(2).fillColor('#000').font('Helvetica').fontSize(9)
-    .text(`Prepared by: ${quote.created_by_name || COMPANY.name}${quote.created_by_phone ? ` (${quote.created_by_phone})` : ''}`);
-  doc.fillColor(MUTED).fontSize(7.5).text('This is a computer-generated quotation.', { align: 'center' });
+  // one line, so a long parts list never pushes a lonely footer onto a blank second page
+  doc.moveDown(1).fillColor('#000').font('Helvetica').fontSize(9)
+    .text(`Prepared by: ${quote.created_by_name || COMPANY.name}${quote.created_by_phone ? ` (${quote.created_by_phone})` : ''}`, {
+      continued: true,
+    })
+    .fillColor(MUTED).fontSize(7.5).text('   ·   This is a computer-generated quotation.');
 
   doc.end();
 }

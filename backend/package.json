@@ -13,7 +13,8 @@
     "db:start": "node --env-file-if-exists=.env scripts/pg-local.mjs",
     "db:reset": "node --env-file-if-exists=.env scripts/db-reset.js",
     "hash": "node scripts/hash-password.js",
-    "test:smoke": "node scripts/smoke-test.js"
+    "test:smoke": "node scripts/smoke-test.js",
+    "db:migrate": "node --env-file-if-exists=.env scripts/db-reset.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

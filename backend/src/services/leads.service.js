@@ -181,8 +181,9 @@ async function getLeadDetail(id, user) {
       [id],
     ),
     query(
-      `SELECT q.id, q.quote_number, q.status, q.system_type, q.capacity_kw, q.subtotal, q.discount_pct,
-              q.gst_amount, q.total, q.valid_until, q.template_id, t.name AS template_name, q.created_at
+      `SELECT q.id, q.quote_number, q.status, q.package_kind, q.system_type, q.includes_installation, q.capacity_kw, q.subtotal, q.discount_pct,
+              q.gst_amount, q.total, q.valid_until, q.template_id,
+              t.name || CASE WHEN q.includes_installation THEN ' + Installation' ELSE '' END AS template_name, q.created_at
          FROM quotes q LEFT JOIN package_templates t ON t.id = q.template_id
         WHERE q.lead_id = $1 ORDER BY q.created_at DESC, q.id DESC`,
       [id],
