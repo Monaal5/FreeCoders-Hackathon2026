@@ -108,10 +108,15 @@ export default function LeadDetail() {
       if (res.success) {
         setTechnicians(res.data || []);
         if (res.data?.length > 0) {
+          // Default slot: tomorrow 10:00 in the user's local time (datetime-local has no timezone)
+          const slot = new Date(Date.now() + 86400000);
+          slot.setHours(10, 0, 0, 0);
+          const pad = (n) => String(n).padStart(2, '0');
+          const localValue = `${slot.getFullYear()}-${pad(slot.getMonth() + 1)}-${pad(slot.getDate())}T10:00`;
           setScheduleForm((prev) => ({
             ...prev,
             technician_id: res.data[0].id,
-            scheduled_date: new Date(Date.now() + 86400000).toISOString().slice(0, 16),
+            scheduled_date: localValue,
           }));
         }
       }

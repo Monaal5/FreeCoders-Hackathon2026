@@ -35,13 +35,14 @@ async function findOpenLeadByPhone(client, phone) {
 
 async function insertLead(client, input, { source, assignedTo, createdBy }) {
   const { rows } = await client.query(
-    `INSERT INTO leads (customer_name, phone, email, address, city, pincode, property_type,
-                        monthly_bill, message, source, assigned_to, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    `INSERT INTO leads (customer_name, phone, email, address, city, state, pincode, property_type,
+                        monthly_bill, roof_type, roof_area_sqft, message, source, assigned_to, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
      RETURNING *`,
     [
-      input.customerName, input.phone, input.email, input.address, input.city, input.pincode,
-      input.propertyType, input.monthlyBill, input.message, source, assignedTo, createdBy,
+      input.customerName, input.phone, input.email, input.address, input.city, input.state, input.pincode,
+      input.propertyType, input.monthlyBill, input.roofType, input.roofAreaSqft, input.message,
+      source, assignedTo, createdBy,
     ],
   );
   return rows[0];
@@ -63,14 +64,18 @@ async function createEnquiry(input) {
     const existing = await findOpenLeadByPhone(client, input.phone);
     if (existing) {
       await logActivity(client, existing.id, null, 'NOTE', `Repeat website enquiry: ${input.message || '(no message)'}`);
-      return { leadCode: existing.lead_code, duplicate: true };
+      const owner = await client.query(
+        'SELECT u.name FROM leads l LEFT JOIN users u ON u.id = l.assigned_to WHERE l.id = $1',
+        [existing.id],
+      );
+      return { leadCode: existing.lead_code, assignedToName: owner.rows[0]?.name ?? null, duplicate: true };
     }
 
     const staff = await pickLeastBusyStaff(client);
     const lead = await insertLead(client, input, { source: 'WEBSITE', assignedTo: staff?.id ?? null, createdBy: null });
     await logActivity(client, lead.id, null, 'CREATED', 'Website enquiry received', LEAD_STATUS.NEW);
     if (staff) await logActivity(client, lead.id, null, 'ASSIGNED', `Auto-assigned to ${staff.name}`);
-    return { leadCode: lead.lead_code, duplicate: false };
+    return { leadCode: lead.lead_code, assignedToName: staff?.name ?? null, duplicate: false };
   });
 }
 
@@ -158,17 +163,19 @@ async function getLeadDetail(id) {
          JOIN users t ON t.id = s.technician_id
          LEFT JOIN users r ON r.id = s.reviewed_by
         WHERE s.lead_id = $1
-        ORDER BY s.created_at DESC`,
+        ORDER BY s.created_at DESC, s.id DESC`,
       [id],
     ),
     query(
       `SELECT q.id, q.quote_number, q.status, q.system_type, q.capacity_kw, q.subtotal, q.discount_pct,
-              q.gst_amount, q.total, q.valid_until, q.template_id, q.created_at
-         FROM quotes q WHERE q.lead_id = $1 ORDER BY q.created_at DESC`,
+              q.gst_amount, q.total, q.valid_until, q.template_id, t.name AS template_name, q.created_at
+         FROM quotes q LEFT JOIN package_templates t ON t.id = q.template_id
+        WHERE q.lead_id = $1 ORDER BY q.created_at DESC, q.id DESC`,
       [id],
     ),
     query(
-      `SELECT a.id, a.type, a.from_status, a.to_status, a.note, a.created_at, a.actor_id, u.name AS actor_name
+      `SELECT a.id, a.type, a.from_status, a.to_status, a.note, a.created_at, a.actor_id,
+              u.name AS actor_name, COALESCE(u.role::text, 'SYSTEM') AS actor_role
          FROM lead_activities a LEFT JOIN users u ON u.id = a.actor_id
         WHERE a.lead_id = $1
         ORDER BY a.created_at DESC, a.id DESC`,

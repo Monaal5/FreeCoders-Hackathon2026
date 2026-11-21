@@ -53,8 +53,14 @@ export default function QuoteBuilder() {
           const list = templRes.data || [];
           setTemplates(list);
 
-          // Auto-select template matching lead's suggested or approved capacity
-          const matched = list.find((t) => t.capacity_kw === (l.suggested_kw || 3.0)) || list[0];
+          // Auto-select the smallest package that covers the lead's suggested / survey-approved kW,
+          // preferring the system type chosen during qualification (default On-Grid).
+          const target = Number(l.suggested_kw) || 3.0;
+          const wantedType = l.qualification_data?.system_type || 'ON_GRID';
+          const pool = list.filter((t) => !t.system_type || t.system_type === wantedType);
+          const candidates = (pool.length ? pool : list).slice().sort((a, b) => a.capacity_kw - b.capacity_kw);
+          const matched =
+            candidates.find((t) => Number(t.capacity_kw) >= target) || candidates[candidates.length - 1] || list[0];
           if (matched) {
             setSelectedTemplateId(matched.id);
           }
@@ -70,14 +76,22 @@ export default function QuoteBuilder() {
 
   const selectedTemplate = templates.find((t) => t.id === Number(selectedTemplateId));
 
-  // Automatic BOM calculation
+  // Automatic BOM calculation – same maths as the backend (per-item GST on the discounted value),
+  // so the preview always equals the saved quote. Items without gst_rate (mock data) use 18%.
+  const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
   const bomItems = selectedTemplate?.items || [];
-  const subtotal = bomItems.reduce((acc, item) => acc + item.quantity * item.unit_price, 0);
-  const discountAmount = Math.round((subtotal * Number(discountPct || 0)) / 100);
-  const taxableAmount = subtotal - discountAmount;
-  const gstPct = 18;
-  const gstAmount = Math.round((taxableAmount * gstPct) / 100);
-  const totalAmount = taxableAmount + gstAmount;
+  const discountFactor = 1 - Number(discountPct || 0) / 100;
+  const subtotal = round2(bomItems.reduce((acc, item) => acc + round2(item.quantity * item.unit_price), 0));
+  const discountAmount = round2((subtotal * Number(discountPct || 0)) / 100);
+  const taxableAmount = round2(subtotal - discountAmount);
+  const gstAmount = round2(
+    bomItems.reduce(
+      (acc, item) => acc + round2(item.quantity * item.unit_price * discountFactor * ((item.gst_rate ?? 18) / 100)),
+      0,
+    ),
+  );
+  const hasItemGst = bomItems.some((item) => item.gst_rate !== undefined);
+  const totalAmount = round2(taxableAmount + gstAmount);
 
   const handleSubmitQuote = async (e) => {
     e.preventDefault();
@@ -320,7 +334,7 @@ export default function QuoteBuilder() {
               </div>
 
               <div className="flex justify-between">
-                <span>GST (18% Statutory)</span>
+                <span>{hasItemGst ? 'GST (5% modules & inverters, 18% others)' : 'GST (18% Statutory)'}</span>
                 <span className="font-semibold text-slate-800">{formatCurrency(gstAmount)}</span>
               </div>
 

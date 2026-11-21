@@ -4,19 +4,28 @@ const AppError = require('../utils/AppError');
 const { toId, toNumber, oneOf, optionalText, requireFields, DATE_RE } = require('../utils/validate');
 const { toPublicPath, removeFiles } = require('../middleware/upload');
 
-/** POST /api/leads/:id/surveys  { technicianId, scheduledDate: 'YYYY-MM-DD', notes? } */
+/**
+ * POST /api/leads/:id/surveys  { technicianId, scheduledDate, notes? }
+ * scheduledDate: 'YYYY-MM-DD' (date only) or an ISO date-time such as '2026-11-22T05:30:00.000Z'.
+ */
 async function assign(req, res) {
   requireFields(req.body, ['technicianId', 'scheduledDate']);
-  const { scheduledDate } = req.body;
-  if (!DATE_RE.test(scheduledDate) || Number.isNaN(Date.parse(scheduledDate))) {
-    throw AppError.badRequest('scheduledDate must be YYYY-MM-DD', { field: 'scheduledDate' });
+  const scheduledDate = String(req.body.scheduledDate).trim();
+  const when = new Date(DATE_RE.test(scheduledDate) ? `${scheduledDate}T00:00:00` : scheduledDate);
+  if (!/^\d{4}-\d{2}-\d{2}/.test(scheduledDate) || Number.isNaN(when.getTime())) {
+    throw AppError.badRequest('scheduledDate must be YYYY-MM-DD or an ISO date-time', { field: 'scheduledDate' });
   }
-  const today = new Date().toISOString().slice(0, 10);
-  if (scheduledDate < today) throw AppError.badRequest('scheduledDate cannot be in the past', { field: 'scheduledDate' });
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  if (when < startOfToday) throw AppError.badRequest('scheduledDate cannot be in the past', { field: 'scheduledDate' });
 
   const survey = await surveysService.assignSurvey(
     toId(req.params.id),
-    { technicianId: toId(req.body.technicianId, 'technicianId'), scheduledDate, notes: optionalText(req.body.notes, 1000) },
+    {
+      technicianId: toId(req.body.technicianId, 'technicianId'),
+      scheduledDate: when.toISOString(),
+      notes: optionalText(req.body.notes, 1000),
+    },
     req.user,
   );
   created(res, survey);
@@ -37,8 +46,11 @@ async function submit(req, res) {
     const data = {
       roofType: optionalText(b.roofType, 60),
       roofAreaSqft: toNumber(b.roofAreaSqft, 'roofAreaSqft', { min: 0, max: 1_000_000 }),
-      shading: oneOf(b.shading, ['NONE', 'PARTIAL', 'HEAVY'], 'shading'),
+      shading: optionalText(b.shading, 500), // free text, e.g. "No shade 9am-4pm"
       orientation: optionalText(b.orientation, 40),
+      structureType: optionalText(b.structureType, 120),
+      cableRunMeters: toNumber(b.cableRunMeters, 'cableRunMeters', { min: 0, max: 10_000 }),
+      inverterLocation: optionalText(b.inverterLocation, 200),
       sanctionedLoadKw: toNumber(b.sanctionedLoadKw, 'sanctionedLoadKw', { min: 0, max: 10_000 }),
       recommendedKw: toNumber(b.recommendedKw, 'recommendedKw', { min: 0.5, max: 1000 }),
       latitude: toNumber(b.latitude, 'latitude', { min: -90, max: 90 }),

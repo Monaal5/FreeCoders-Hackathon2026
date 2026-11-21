@@ -12,6 +12,7 @@ async function createEnquiry(req, res) {
   const result = await leadsService.createEnquiry(input);
   created(res, {
     leadCode: result.leadCode,
+    assignedToName: result.assignedToName,
     message: result.duplicate
       ? 'We already have your enquiry – our team will contact you shortly.'
       : 'Thank you! Our solar expert will call you within 24 hours.',
@@ -71,6 +72,7 @@ async function qualify(req, res) {
     suggestedKw: toNumber(b.suggestedKw, 'suggestedKw', { min: 0.5, max: 100 }), // manual override
     systemType: oneOf(b.systemType, ['ON_GRID', 'OFF_GRID'], 'systemType'),
     roofType: optionalText(b.roofType, 60),
+    roofViability: oneOf(b.roofViability, ['HIGH', 'MEDIUM', 'LOW'], 'roofViability'),
     timeline: optionalText(b.timeline, 60),
     budget: toNumber(b.budget, 'budget', { min: 0 }),
     interestedInSubsidy: typeof b.interestedInSubsidy === 'boolean' ? b.interestedInSubsidy : null,

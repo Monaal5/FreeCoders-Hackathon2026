@@ -95,7 +95,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"staff1@sunpower.local\",\n  \"password\": \"password123\"\n}"
+              "raw": "{\n  \"email\": \"staff@sunpower.com\",\n  \"password\": \"password123\"\n}"
             }
           },
           "event": [
@@ -135,7 +135,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"admin@sunpower.local\",\n  \"password\": \"password123\"\n}"
+              "raw": "{\n  \"email\": \"admin@sunpower.com\",\n  \"password\": \"password123\"\n}"
             }
           },
           "event": [
@@ -175,7 +175,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"tech1@sunpower.local\",\n  \"password\": \"password123\"\n}"
+              "raw": "{\n  \"email\": \"tech@sunpower.com\",\n  \"password\": \"password123\"\n}"
             }
           },
           "event": [

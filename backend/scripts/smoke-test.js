@@ -1,5 +1,6 @@
 // End-to-end smoke test of Phase 1 (Person A). Needs db:start + dev running.
-// Usage: npm run test:smoke   then   npm run db:reset   (the test adds data)
+// Usage: npm run db:reset  then  npm run test:smoke  then  npm run db:reset again
+// (it expects fresh seed data and adds its own test leads)
 const fs = require('node:fs');
 const path = require('node:path');
 const B = 'http://localhost:5000/api';
@@ -20,9 +21,9 @@ async function api(method, url, { token, body, form } = {}) {
   const h = await api('GET', '/health'); check('health', h.status === 200, h.json);
 
   const login = async (email) => (await api('POST', '/auth/login', { body: { email, password: 'password123' } })).json.data.token;
-  const bad = await api('POST', '/auth/login', { body: { email: 'admin@sunpower.local', password: 'nope' } });
+  const bad = await api('POST', '/auth/login', { body: { email: 'admin@sunpower.com', password: 'nope' } });
   check('bad login 401', bad.status === 401 && bad.json.success === false, bad.json);
-  const admin = await login('admin@sunpower.local'), staff = await login('staff1@sunpower.local'), tech = await login('tech1@sunpower.local');
+  const admin = await login('admin@sunpower.com'), staff = await login('staff@sunpower.com'), tech = await login('tech@sunpower.com');
   check('logins', admin && staff && tech);
 
   const enq = await api('POST', '/public/enquiries', { body: { customerName: 'Test Customer', phone: '+91 91234 56789', city: 'Pune', monthlyBill: 3000, pincode: '411001' } });

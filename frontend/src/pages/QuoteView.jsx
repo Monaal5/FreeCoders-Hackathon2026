@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { apiClient } from '../api/client';
+import { apiClient, openQuotePdf, isMockMode } from '../api/client';
 import { formatCurrency, formatDate, formatKW } from '../utils/formatters';
 import confetti from 'canvas-confetti';
 import {
@@ -80,6 +80,14 @@ export default function QuoteView() {
     window.print();
   };
 
+  const handleDownloadPdf = async () => {
+    try {
+      await openQuotePdf(quote.id, `${quote.quote_number || `quote-${quote.id}`}.pdf`);
+    } catch (err) {
+      alert('Could not download the PDF. Is the backend running?');
+    }
+  };
+
   if (loading) {
     return <div className="py-16 text-center text-slate-400">Loading quotation #{id}...</div>;
   }
@@ -112,7 +120,7 @@ export default function QuoteView() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold text-slate-900">
-                Quotation #{quote.id}
+                Quotation {quote.quote_number || `#${quote.id}`}
               </h1>
               <span
                 className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${
@@ -141,6 +149,27 @@ export default function QuoteView() {
             <Printer className="w-4 h-4 text-slate-500" />
             <span>Print / PDF</span>
           </button>
+
+          {!isMockMode() && (
+            <button
+              onClick={handleDownloadPdf}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs shadow-2xs transition"
+            >
+              <Download className="w-4 h-4 text-slate-500" />
+              <span>Download PDF</span>
+            </button>
+          )}
+
+          {quote.status === 'DRAFT' && (
+            <button
+              disabled={actionLoading}
+              onClick={() => handleUpdateStatus('SENT')}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-cyan-200 bg-cyan-50 hover:bg-cyan-100 text-cyan-700 font-semibold text-xs transition"
+            >
+              <Mail className="w-4 h-4" />
+              <span>Mark Sent</span>
+            </button>
+          )}
 
           {!isWon && !isRejected && (
             <>
@@ -214,7 +243,7 @@ export default function QuoteView() {
               Turnkey Solar Proposal
             </span>
             <div className="text-xl font-black text-slate-900">
-              #{quote.id}
+              {quote.quote_number || `#${quote.id}`}
             </div>
             <div className="text-xs text-slate-500 mt-1">
               <strong>Date:</strong> {formatDate(quote.created_at)}
@@ -332,7 +361,7 @@ export default function QuoteView() {
             </div>
 
             <div className="flex justify-between text-slate-600">
-              <span>GST ({quote.gst_pct}%):</span>
+              <span>{quote.gst_pct ? `GST (${quote.gst_pct}%):` : 'GST (as applicable):'}</span>
               <span className="font-semibold text-slate-900">{formatCurrency(quote.gst_amount)}</span>
             </div>
 

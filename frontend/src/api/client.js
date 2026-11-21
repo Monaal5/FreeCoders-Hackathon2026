@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { initialUsers, initialLeads, initialPackageTemplates, initialQuotes, initialProducts } from './mockData';
 import { canTransition, LEAD_STATUS } from '../utils/leadStatus';
+import { adaptRequest, adaptResponse } from './liveAdapter';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -22,12 +23,26 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Expired / invalid token in Live mode -> clear the session and go to login
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    const isLogin = err.config?.url?.includes('/auth/login');
+    if (err.response?.status === 401 && !isLogin) {
+      localStorage.removeItem('sunpower_token');
+      localStorage.removeItem('sunpower_user');
+      if (!window.location.pathname.startsWith('/login')) window.location.assign('/login');
+    }
+    return Promise.reject(err);
+  },
+);
+
 // Mode State Management (Mock vs Live)
-// Default to Mock mode so B can test and demo without waiting for Person A's backend
+// Default to Live mode (real Express + PostgreSQL backend); Mock stays available from the navbar toggle.
 const MOCK_STORAGE_KEY = 'sunpower_use_mock';
 export function isMockMode() {
   const saved = localStorage.getItem(MOCK_STORAGE_KEY);
-  if (saved === null) return true; // Default to mock for smooth standalone operation
+  if (saved === null) return false;
   return saved === 'true';
 }
 
@@ -690,39 +705,60 @@ async function mockRequest(method, url, data = null, params = null) {
   };
 }
 
+// Live request: pages call '/api/...' but axios baseURL already ends in /api, so strip it,
+// then translate the request/response shapes (see liveAdapter.js).
+async function liveRequest(method, url, data, config = {}) {
+  const cleanUrl = url.replace(/^\/api(?=\/)/, '');
+  const req = adaptRequest(method, cleanUrl, data, config.params);
+  const res = await api.request({
+    ...config,
+    method,
+    url: req.url,
+    data: req.data,
+    params: req.params,
+    headers: { ...(config.headers || {}), ...(req.headers || {}) },
+  });
+  return adaptResponse(method, cleanUrl, res.data);
+}
+
 // Unified client proxy that checks isMockMode()
 export const apiClient = {
   async get(url, config = {}) {
-    if (isMockMode()) {
-      return mockRequest('get', url, null, config.params);
-    }
-    const res = await api.get(url, config);
-    return res.data;
+    if (isMockMode()) return mockRequest('get', url, null, config.params);
+    return liveRequest('get', url, null, config);
   },
 
   async post(url, data, config = {}) {
-    if (isMockMode()) {
-      return mockRequest('post', url, data, config.params);
-    }
-    const res = await api.post(url, data, config);
-    return res.data;
+    if (isMockMode()) return mockRequest('post', url, data, config.params);
+    return liveRequest('post', url, data, config);
   },
 
   async patch(url, data, config = {}) {
-    if (isMockMode()) {
-      return mockRequest('patch', url, data, config.params);
-    }
-    const res = await api.patch(url, data, config);
-    return res.data;
+    if (isMockMode()) return mockRequest('patch', url, data, config.params);
+    return liveRequest('patch', url, data, config);
   },
 
   async delete(url, config = {}) {
-    if (isMockMode()) {
-      return mockRequest('delete', url, null, config.params);
-    }
-    const res = await api.delete(url, config);
-    return res.data;
+    if (isMockMode()) return mockRequest('delete', url, null, config.params);
+    return liveRequest('delete', url, null, config);
   },
 };
+
+/** Opens the server-generated quote PDF (Live) or the browser print view (Mock). */
+export async function openQuotePdf(quoteId, fileName = `quote-${quoteId}.pdf`) {
+  if (isMockMode()) {
+    window.print();
+    return;
+  }
+  const res = await api.get(`/quotes/${quoteId}/pdf`, { responseType: 'blob' });
+  const url = URL.createObjectURL(res.data);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
 
 export default apiClient;

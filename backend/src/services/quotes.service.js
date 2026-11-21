@@ -109,7 +109,8 @@ async function getQuote(id) {
     query(
       `SELECT q.*, t.name AS template_name, u.name AS created_by_name, u.phone AS created_by_phone,
               l.lead_code, l.customer_name, l.phone AS customer_phone, l.email AS customer_email,
-              l.address AS customer_address, l.city AS customer_city, l.pincode AS customer_pincode,
+              l.address AS customer_address, l.city AS customer_city, l.state AS customer_state,
+              l.pincode AS customer_pincode,
               l.status AS lead_status
          FROM quotes q
          JOIN leads l ON l.id = q.lead_id

@@ -50,9 +50,12 @@ CREATE TABLE leads (
   email         TEXT,
   address       TEXT,
   city          TEXT,
+  state         TEXT,
   pincode       TEXT,
   property_type property_type NOT NULL DEFAULT 'RESIDENTIAL',
   monthly_bill  NUMERIC(12,2) CHECK (monthly_bill IS NULL OR monthly_bill >= 0),
+  roof_type     TEXT,                                   -- as reported by the customer
+  roof_area_sqft NUMERIC(10,2) CHECK (roof_area_sqft IS NULL OR roof_area_sqft >= 0),
   message       TEXT,
   source        lead_source   NOT NULL DEFAULT 'WEBSITE',
   status        lead_status   NOT NULL DEFAULT 'NEW',
@@ -88,14 +91,17 @@ CREATE TABLE surveys (
   id                 BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   lead_id            BIGINT        NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
   technician_id      BIGINT        NOT NULL REFERENCES users(id),
-  scheduled_date     DATE          NOT NULL,
+  scheduled_date     TIMESTAMPTZ   NOT NULL,                -- visit date + time slot
   status             survey_status NOT NULL DEFAULT 'SCHEDULED',
   assign_notes       TEXT,
   -- filled by technician on submit
   roof_type          TEXT,
   roof_area_sqft     NUMERIC(10,2),
-  shading            TEXT,
+  shading            TEXT,                                  -- free-text shading / azimuth analysis
   orientation        TEXT,
+  structure_type     TEXT,
+  cable_run_meters   NUMERIC(8,2),
+  inverter_location  TEXT,
   sanctioned_load_kw NUMERIC(6,2),
   recommended_kw     NUMERIC(5,2),
   latitude           NUMERIC(9,6),

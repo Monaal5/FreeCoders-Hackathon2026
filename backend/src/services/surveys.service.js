@@ -12,12 +12,15 @@ async function assignSurvey(leadId, { technicianId, scheduledDate, notes }, acto
     if (!tech.rows.length) throw AppError.badRequest('technicianId must be an active technician', { field: 'technicianId' });
 
     // locks the lead row and enforces QUALIFIED -> SURVEY_SCHEDULED (409 otherwise)
+    const visit = new Date(scheduledDate).toLocaleString('en-IN', {
+      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata',
+    });
     await transitionLead(
       client,
       leadId,
       LEAD_STATUS.SURVEY_SCHEDULED,
       actor.id,
-      `Survey assigned to ${tech.rows[0].name} on ${scheduledDate}`,
+      `Survey assigned to ${tech.rows[0].name} for ${visit}`,
     );
 
     const { rows } = await client.query(
@@ -33,10 +36,9 @@ async function assignSurvey(leadId, { technicianId, scheduledDate, notes }, acto
 /** Technician's own surveys, with the customer details needed on site. */
 async function listMySurveys(technicianId, status) {
   const { rows } = await query(
-    `SELECT s.id, s.lead_id, s.status, s.scheduled_date, s.assign_notes, s.photos, s.submitted_at,
-            s.review_note, s.recommended_kw, s.created_at,
-            l.lead_code, l.customer_name, l.phone, l.address, l.city, l.pincode, l.property_type,
-            l.monthly_bill, l.suggested_kw, l.qualification
+    `SELECT s.*,
+            l.lead_code, l.customer_name, l.phone, l.address, l.city, l.state, l.pincode, l.property_type,
+            l.monthly_bill, l.roof_type AS lead_roof_type, l.suggested_kw, l.status AS lead_status, l.qualification
        FROM surveys s
        JOIN leads l ON l.id = s.lead_id
       WHERE s.technician_id = $1
@@ -68,13 +70,14 @@ async function submitSurvey(surveyId, data, photoPaths, technician) {
           SET status = 'SUBMITTED', submitted_at = now(),
               roof_type = $2, roof_area_sqft = $3, shading = $4, orientation = $5,
               sanctioned_load_kw = $6, recommended_kw = $7, latitude = $8, longitude = $9,
-              technician_notes = $10, photos = $11::text[]
+              technician_notes = $10, photos = $11::text[],
+              structure_type = $12, cable_run_meters = $13, inverter_location = $14
         WHERE id = $1
         RETURNING *`,
       [
         surveyId, data.roofType, data.roofAreaSqft, data.shading, data.orientation,
         data.sanctionedLoadKw, data.recommendedKw, data.latitude, data.longitude,
-        data.technicianNotes, photoPaths,
+        data.technicianNotes, photoPaths, data.structureType, data.cableRunMeters, data.inverterLocation,
       ],
     );
 

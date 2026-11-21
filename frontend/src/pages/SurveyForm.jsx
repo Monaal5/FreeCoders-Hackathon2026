@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { apiClient } from '../api/client';
+import { apiClient, isMockMode } from '../api/client';
 import { formatKW } from '../utils/formatters';
 import {
   ArrowLeft,
@@ -36,11 +36,16 @@ export default function SurveyForm() {
     technician_remarks: '',
   });
 
-  // Photo upload list (base64 or remote URL strings)
-  const [photos, setPhotos] = useState([
-    'https://images.unsplash.com/photo-1509391365360-2e959784a276?w=800&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1508873696983-2df5293cb395?w=800&auto=format&fit=crop&q=80'
-  ]);
+  // Photo upload list (base64 or remote URL strings).
+  // Live mode starts empty: only real photos picked here are uploaded to the backend.
+  const [photos, setPhotos] = useState(() =>
+    isMockMode()
+      ? [
+          'https://images.unsplash.com/photo-1509391365360-2e959784a276?w=800&auto=format&fit=crop&q=80',
+          'https://images.unsplash.com/photo-1508873696983-2df5293cb395?w=800&auto=format&fit=crop&q=80',
+        ]
+      : []
+  );
 
   useEffect(() => {
     const fetchSurveyData = async () => {

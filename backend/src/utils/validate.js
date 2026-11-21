@@ -60,9 +60,12 @@ function parseLeadInput(body) {
     email,
     address: optionalText(body.address, 500),
     city: optionalText(body.city, 80),
+    state: optionalText(body.state, 80),
     pincode,
     propertyType: oneOf(body.propertyType, ['RESIDENTIAL', 'COMMERCIAL', 'INDUSTRIAL'], 'propertyType') || 'RESIDENTIAL',
     monthlyBill: toNumber(body.monthlyBill, 'monthlyBill', { min: 0, max: 10_000_000 }),
+    roofType: optionalText(body.roofType, 60),
+    roofAreaSqft: toNumber(body.roofAreaSqft, 'roofAreaSqft', { min: 0, max: 10_000_000 }),
     message: optionalText(body.message, 2000),
   };
 }
