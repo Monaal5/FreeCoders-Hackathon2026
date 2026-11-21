@@ -11,3 +11,5 @@ CREATE SCHEMA public;
 \ir 03_packages.sql
 \ir 04_phase2_schema.sql
 \ir 05_phase2_seed.sql
+\ir 06_phase3_schema.sql
+\ir 07_phase3_seed.sql

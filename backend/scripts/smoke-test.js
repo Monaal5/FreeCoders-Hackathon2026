@@ -72,7 +72,7 @@ async function api(method, url, { token, body, form } = {}) {
   check('re-qualify 409', q2.status === 409 && q2.json.error.code === 'INVALID_STATUS_TRANSITION', q2.json);
 
   const techs = await api('GET', '/users?role=TECHNICIAN', { token: staff });
-  check('technicians list', techs.json.data.length === 1, techs.json);
+  check('technicians list (Vikram + Zara)', techs.json.data.length === 2 && techs.json.data[0].email === 'tech@sunpower.com', techs.json);
   const today = new Date().toISOString().slice(0, 10);
   const otherSv = await api('POST', `/leads/${lead.id}/surveys`, { token: other, body: { technicianId: techs.json.data[0].id, scheduledDate: today } });
   check('other staff assign survey 404', otherSv.status === 404, otherSv.json);
@@ -185,7 +185,7 @@ async function api(method, url, { token, body, form } = {}) {
   // inventory: list, low stock, receive, serial search, ledger
   const invList = (await api('GET', '/inventory', { token: staff })).json.data;
   const prod = (sku) => invList.find((p) => p.sku === sku);
-  check('P2 inventory lists stock + low-stock flags', prod('BOS-LA').lowStock === true && prod('MC4-PAIR').lowStock === false && prod('PNL-540').serialsInStock >= 24, [prod('BOS-LA'), prod('PNL-540')]);
+  check('P2 inventory lists stock + low-stock flags', prod('BOS-LA').lowStock === true && prod('MC4-PAIR').lowStock === false && prod('PNL-540').serialsInStock >= 12, [prod('BOS-LA'), prod('PNL-540')]);
   check('P2 services are not inventory', !invList.some((p) => p.category === 'SERVICE'));
   const isoBefore = prod('SW-DC-ISO').available;
   const recvBulk = await api('POST', '/inventory/receive', { token: staff, body: { productId: prod('SW-DC-ISO').id, quantity: 10, note: 'PO-77' } });
@@ -248,8 +248,8 @@ async function api(method, url, { token, body, form } = {}) {
   check('P2 assign crew lead + date', assignJ.status === 200 && assignJ.json.data.crewLeadId === techId && assignJ.json.data.scheduledDate === tomorrow, assignJ.json);
   const techJobs = (await api('GET', `/jobs?from=${tomorrow}&to=${tomorrow}`, { token: tech })).json.data;
   check('P2 technician sees own job', techJobs.length === 1 && techJobs[0].id === jobId && techJobs[0].customerName, techJobs);
-  const earlyDone = await api('POST', `/jobs/${jobId}/complete`, { token: tech, body: { remarks: 'too early' } });
-  check('P3 complete installation before delivery 409', earlyDone.status === 409 && earlyDone.json.error.code === 'INVALID_ORDER_STATUS', earlyDone.json);
+  const earlyStart = await api('POST', `/jobs/${jobId}/start`, { token: tech });
+  check('P3 start before delivery 409', earlyStart.status === 409 && earlyStart.json.error.code === 'ORDER_NOT_DELIVERED', earlyStart.json);
   const deliv = await api('POST', `/orders/${oid}/deliver`, { token: tech });
   check('P2 crew lead confirms delivery: 8 warranties start', deliv.status === 200 && deliv.json.data.order.status === 'DELIVERED' && deliv.json.data.warrantiesStarted === 8, deliv.json);
   const od2 = (await api('GET', `/orders/${oid}`, { token: staff })).json.data;
@@ -263,16 +263,86 @@ async function api(method, url, { token, body, form } = {}) {
   check('P2 nothing left to pay 409', (await pay({ amount: 1, mode: 'CASH' })).json?.error?.code === 'ALREADY_PAID');
   console.log('   order:', od2.orderNumber, '| paid', od2.amountPaid, 'of', od2.totalAmount, '| warranties', od2.warranties.length);
 
-  // installation completion (job -> COMPLETED, order -> INSTALLED, delivered serials -> INSTALLED)
-  check('P3 other staff cannot complete the job 404', (await api('POST', `/jobs/${jobId}/complete`, { token: other, body: {} })).status === 404);
-  check('P3 a technician who is not crew lead gets 404', (await api('POST', `/jobs/99999/complete`, { token: tech, body: {} })).status === 404);
-  const done = await api('POST', `/jobs/${jobId}/complete`, { token: tech, body: { remarks: 'Commissioned, net meter pending' } });
-  check('P3 crew lead completes installation', done.status === 200 && done.json.data.status === 'COMPLETED' && done.json.data.completedAt && done.json.data.unitsInstalled === 8, done.json);
+  // ===================== Phase 3: field installation on the roof =====================
+  const tech2 = await login('tech2@sunpower.com');
+  const tech2Id = (await api('GET', '/users?role=TECHNICIAN', { token: admin })).json.data.find((u) => u.email === 'tech2@sunpower.com').id;
+  const J = (p) => `/jobs/${jobId}${p}`;
+  const crewSet = await api('PUT', J('/crew'), { token: staff, body: { technicianIds: [tech2Id] } });
+  check('P3 set crew: lead stays, Zara added', crewSet.status === 200 && crewSet.json.data.crew.length === 2 && crewSet.json.data.crew[0].isLead, crewSet.json);
+  check('P3 crew must be technicians 400', (await api('PUT', J('/crew'), { token: staff, body: { technicianIds: [staffUsers[0].id] } })).status === 400);
+  check('P3 other staff cannot change the crew 404', (await api('PUT', J('/crew'), { token: other, body: { technicianIds: [tech2Id] } })).status === 404);
+  const myTech = (await api('GET', `/jobs/my?date=${tomorrow}`, { token: tech })).json.data;
+  check('P3 my jobs (lead) with maps link', myTech.some((j) => j.id === jobId && j.isLead && j.mapsUrl.includes('google.com/maps')), myTech);
+  const myTech2 = (await api('GET', '/jobs/my', { token: tech2 })).json.data;
+  check('P3 my jobs (crew member) lists it too', myTech2.some((j) => j.id === jobId && !j.isLead), myTech2);
+  check('P3 /jobs/my is for technicians 403', (await api('GET', '/jobs/my', { token: staff })).status === 403);
+  check('P3 crew member cannot start (lead only) 403', (await api('POST', J('/start'), { token: tech2 })).status === 403);
+  check('P3 checklist before start 409', (await api('PATCH', J('/checklist'), { token: tech, body: { checklist: { STANDS_MOUNTED: true } } })).json?.error?.code === 'JOB_NOT_STARTED');
+  const st = await api('POST', J('/start'), { token: tech });
+  check('P3 crew lead starts the job', st.status === 200 && st.json.data.status === 'IN_PROGRESS' && st.json.data.startedAt, st.json);
+  check('P3 start twice 409', (await api('POST', J('/start'), { token: tech })).json?.error?.code === 'JOB_ALREADY_STARTED');
+  const jd = (await api('GET', J(''), { token: tech2 })).json.data;
+  check('P3 job detail: customer, 8 expected serials, 5-item checklist', jd.customerName && jd.serials.length === 8 && jd.checklistItems.length === 5 && jd.serialsProgress.verified === 0, jd);
+  check('P3 technicians do not see pay rates', jd.crew.every((c) => c.hourlyRate === undefined) && jd.labourCost === undefined);
+  check('P3 other staff cannot open the job 404', (await api('GET', J(''), { token: other })).status === 404);
+  check('P3 unknown checklist item 400', (await api('PATCH', J('/checklist'), { token: tech, body: { checklist: { ROOF_PAINTED: true } } })).status === 400);
+  const cl = await api('PATCH', J('/checklist'), { token: tech2, body: { checklist: { STANDS_MOUNTED: true, PANELS_LAID: true } } });
+  check('P3 crew member saves checklist progress', cl.status === 200 && cl.json.data.items.filter((i) => i.done).length === 2 && !cl.json.data.complete, cl.json);
+  const sigPng = 'data:image/png;base64,' + png.toString('base64');
+  const finish = (body = {}, token = tech) =>
+    api('POST', J('/complete'), { token, body: { confirmedCapacityKw: 3, generationReadingKw: 2.6, signedByName: 'Test Customer', signature: sigPng, notes: 'Commissioned', ...body } });
+  check('P3 complete: checklist incomplete 409', (await finish()).json?.error?.code === 'CHECKLIST_INCOMPLETE');
+  check('P3 crew member cannot complete (lead only) 403', (await finish({}, tech2)).status === 403);
+  await api('PATCH', J('/checklist'), { token: tech, body: { checklist: { WIRING_BOXES_CONNECTED: true, EARTHING_DONE: true, GENERATION_TESTED: true } } });
+  const photo = (stage, n, token = tech) => {
+    const fd = new FormData();
+    if (stage) fd.append('stage', stage);
+    for (let i = 0; i < n; i++) fd.append('photos', new Blob([png], { type: 'image/png' }), `${stage || 'x'}-${i}.png`);
+    return api('POST', J('/photos'), { token, form: fd });
+  };
+  check('P3 photo without stage 400', (await photo(null, 1)).status === 400);
+  const ph1 = await photo('BEFORE', 1, tech2);
+  check('P3 crew member uploads a BEFORE photo', ph1.status === 201 && ph1.json.data.counts.BEFORE === 1, ph1.json);
+  await photo('AFTER', 1);
+  check('P3 complete: only 1 AFTER photo 409', (await finish()).json?.error?.code === 'NOT_ENOUGH_AFTER_PHOTOS');
+  const ph3 = await photo('AFTER', 1);
+  check('P3 2 AFTER photos uploaded', ph3.json.data?.counts.AFTER === 2, ph3.json);
+  const missingSer = await finish();
+  check('P3 complete: unverified serials 409 lists all 8', missingSer.json?.error?.code === 'SERIALS_NOT_VERIFIED' && missingSer.json.error.details.missing.length === 8, missingSer.json);
+  const verify = (sn, token = tech2) => api('POST', J('/serials/verify'), { token, body: { serialNumber: sn } });
+  check('P3 verify unknown serial 409', (await verify('NOPE-9999')).json?.error?.code === 'SERIAL_NOT_FOUND');
+  check('P3 verify a serial from another order 409', (await verify('PNL-540-SN0015')).json?.error?.code === 'SERIAL_NOT_ON_ORDER');
+  let allOk = true;
+  let lastVerify;
+  for (const s of jd.serials) {
+    lastVerify = await verify(s.serialNumber);
+    allOk = allOk && lastVerify.status === 200;
+  }
+  check('P3 verify all 8 serials on site', allOk && lastVerify.json.data.progress.verified === 8 && lastVerify.json.data.progress.missing.length === 0, lastVerify.json);
+  check('P3 verify twice 409', (await verify(jd.serials[0].serialNumber)).json?.error?.code === 'SERIAL_ALREADY_VERIFIED');
+  check('P3 capacity mismatch 409', (await finish({ confirmedCapacityKw: 5 })).json?.error?.code === 'CAPACITY_MISMATCH');
+  check('P3 signature missing 400', (await finish({ signature: '' })).json?.error?.code === 'SIGNATURE_MISSING');
+  check('P3 customer name missing 400', (await finish({ signedByName: '' })).json?.error?.code === 'SIGNATURE_MISSING');
+  check('P3 certificate before completion 409', (await api('GET', J('/certificate'), { token: staff })).json?.error?.code === 'JOB_NOT_COMPLETED');
+  const done = await finish();
+  check('P3 crew lead completes: job COMPLETED, order INSTALLED', done.status === 200 && done.json.data.status === 'COMPLETED' && done.json.data.orderStatus === 'INSTALLED' && done.json.data.unitsInstalled === 8, done.json);
+  check('P3 signature hash is SHA-256', /^[0-9a-f]{64}$/.test(done.json.data?.signatureHash || ''));
+  const logs = done.json.data?.timeLogs || [];
+  check('P3 labour logged for 2 crew at their rates', logs.length === 2 && logs.some((l) => l.hourlyRate === 350) && logs.some((l) => l.hourlyRate === 300) && logs.every((l) => Math.abs(l.cost - Math.round(l.hours * l.hourlyRate * 100) / 100) < 0.01), logs);
+  const jd2 = (await api('GET', J(''), { token: staff })).json.data;
+  check('P3 after completion: integrity VERIFIED + certificate link', jd2.signatureIntegrity?.valid === true && jd2.certificateUrl && jd2.labourCost !== undefined, jd2.signatureIntegrity);
   const od3 = (await api('GET', `/orders/${oid}`, { token: staff })).json.data;
-  check('P3 order INSTALLED, all serials INSTALLED', od3.status === 'INSTALLED' && od3.serials.every((s) => s.status === 'INSTALLED') && od3.installationJob.status === 'COMPLETED', [od3.status, od3.serials.map((s) => s.status)]);
-  const doneAgain = await api('POST', `/jobs/${jobId}/complete`, { token: staff, body: {} });
-  check('P3 complete twice 409', doneAgain.status === 409 && doneAgain.json.error.code === 'JOB_ALREADY_COMPLETED', doneAgain.json);
-  check('P3 warranties unaffected by installation', od3.warranties.length === 8);
+  check('P3 order INSTALLED, serials INSTALLED, warranties kept', od3.status === 'INSTALLED' && od3.serials.every((s) => s.status === 'INSTALLED') && od3.warranties.length === 8, [od3.status, od3.serials.map((s) => s.status)]);
+  check('P3 complete twice 409', (await finish()).json?.error?.code === 'JOB_ALREADY_COMPLETED');
+  check('P3 no photos after completion 409', (await photo('AFTER', 1)).json?.error?.code === 'JOB_ALREADY_COMPLETED');
+  const cert = await api('GET', J('/certificate'), { token: tech2 });
+  check('P3 completion certificate PDF', cert.status === 200 && cert.buf?.subarray(0, 4).toString() === '%PDF', cert.status);
+  if (cert.buf) {
+    const out = path.join(__dirname, '..', 'uploads', 'smoke-test-certificate.pdf');
+    fs.writeFileSync(out, cert.buf);
+    console.log('   certificate saved to', out);
+  }
+  check('P3 other staff cannot get the certificate 404', (await api('GET', J('/certificate'), { token: other })).status === 404);
 
   // reject path on seeded SURVEY_SUBMITTED lead + lost
   const seeded = (await api('GET', '/leads?status=SURVEY_SUBMITTED', { token: admin })).json.data.items[0];

@@ -56,6 +56,14 @@
     {
       "key": "serialNumber",
       "value": "INV-ONG-3-SN0001"
+    },
+    {
+      "key": "tech2Token",
+      "value": ""
+    },
+    {
+      "key": "signature",
+      "value": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=="
     }
   ],
   "item": [
@@ -232,6 +240,46 @@
               ]
             }
           }
+        },
+        {
+          "name": "Login - technician 2 / Zara (sets tech2Token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"tech2@sunpower.com\",\n  \"password\": \"password123\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json(); if (j.success) pm.collectionVariables.set('tech2Token', j.data.token);"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -1563,6 +1611,363 @@
               ]
             },
             "description": "Admin/staff can confirm too. Starts a warranty for every serial."
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Field installation (Phase 3)",
+      "description": "After db:reset the demo job (Green Valley School, 5 kW, order DELIVERED) is scheduled TODAY for Vikram (lead, techToken) + Zara (tech2Token). Flow: My jobs -> Start -> Checklist -> Photos (2+ AFTER) -> Verify every serial -> Complete with signature -> Certificate.",
+      "item": [
+        {
+          "name": "My jobs today (technician)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{techToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs/my",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jobs",
+                "my"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json(); if (j.success) pm.collectionVariables.set('jobId', j.data[0]?.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My jobs on a date",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{techToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs/my?date=2026-11-22",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jobs",
+                "my"
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "2026-11-22"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Job detail (customer, expected serials, checklist, photos)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{techToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs/{{jobId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jobs",
+                "{{jobId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Set crew (office)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs/{{jobId}}/crew",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jobs",
+                "{{jobId}}",
+                "crew"
+              ]
+            },
+            "description": "Crew lead always stays on the crew. ids must be active technicians.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"technicianIds\": [\n    5\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Start job (crew lead)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{techToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs/{{jobId}}/start",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jobs",
+                "{{jobId}}",
+                "start"
+              ]
+            },
+            "description": "409 ORDER_NOT_DELIVERED unless the order is DELIVERED; 403 for crew members who are not the lead."
+          }
+        },
+        {
+          "name": "Save checklist progress",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tech2Token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs/{{jobId}}/checklist",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jobs",
+                "{{jobId}}",
+                "checklist"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"checklist\": {\n    \"STANDS_MOUNTED\": true,\n    \"PANELS_LAID\": true,\n    \"WIRING_BOXES_CONNECTED\": true,\n    \"EARTHING_DONE\": true,\n    \"GENERATION_TESTED\": true\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Upload photos (stage AFTER)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tech2Token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs/{{jobId}}/photos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jobs",
+                "{{jobId}}",
+                "photos"
+              ]
+            },
+            "description": "multipart: stage = BEFORE | DURING | AFTER, photos = 1-8 images. Completion needs at least 2 AFTER photos.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "stage",
+                  "value": "AFTER",
+                  "type": "text"
+                },
+                {
+                  "key": "photos",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Verify serial on site",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tech2Token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs/{{jobId}}/serials/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jobs",
+                "{{jobId}}",
+                "serials",
+                "verify"
+              ]
+            },
+            "description": "409: SERIAL_NOT_FOUND, SERIAL_NOT_ON_ORDER, SERIAL_ALREADY_VERIFIED. Demo order serials: PNL-540-SN0015..SN0024, INV-ONG-5-SN0001, CC-MPPT-60-SN0004.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"serialNumber\": \"PNL-540-SN0015\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Complete job + customer signature (crew lead)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{techToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs/{{jobId}}/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jobs",
+                "{{jobId}}",
+                "complete"
+              ]
+            },
+            "description": "Errors: CHECKLIST_INCOMPLETE, NOT_ENOUGH_AFTER_PHOTOS, SERIALS_NOT_VERIFIED (lists them), CAPACITY_MISMATCH, SIGNATURE_MISSING, ORDER_NOT_DELIVERED, JOB_NOT_STARTED.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"confirmedCapacityKw\": 5,\n  \"generationReadingKw\": 4.2,\n  \"notes\": \"Commissioned, customer briefed\",\n  \"signedByName\": \"Mrs. Kapoor (Principal)\",\n  \"signature\": {{signature}}\n}"
+            }
+          }
+        },
+        {
+          "name": "Completion certificate PDF",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs/{{jobId}}/certificate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jobs",
+                "{{jobId}}",
+                "certificate"
+              ]
+            }
           }
         }
       ]
