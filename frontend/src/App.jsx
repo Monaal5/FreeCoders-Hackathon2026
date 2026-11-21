@@ -10,6 +10,12 @@ import TechnicianSurveys from './pages/TechnicianSurveys';
 import SurveyForm from './pages/SurveyForm';
 import QuoteBuilder from './pages/QuoteBuilder';
 import QuoteView from './pages/QuoteView';
+import OrdersList from './pages/OrdersList';
+import OrderDetail from './pages/OrderDetail';
+import WarehouseScan from './pages/WarehouseScan';
+import InventoryPage from './pages/InventoryPage';
+import CrewSchedule from './pages/CrewSchedule';
+import QrLabels from './pages/QrLabels';
 
 function ProtectedRoute({ children, allowedRoles }) {
   const { user, isAuthenticated } = useAuth();
@@ -83,6 +89,64 @@ export default function App() {
                 element={
                   <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
                     <QuoteView />
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Phase 2: Order, Inventory & Dispatch Routes */}
+              <Route
+                path="/orders"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+                    <OrdersList />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/orders/:id"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'TECHNICIAN']}>
+                    <OrderDetail />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/orders/:id/scan"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+                    <WarehouseScan />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/inventory"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+                    <InventoryPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/inventory/labels"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+                    <QrLabels />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/jobs"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'TECHNICIAN']}>
+                    <CrewSchedule />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/schedule"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'TECHNICIAN']}>
+                    <CrewSchedule />
                   </ProtectedRoute>
                 }
               />

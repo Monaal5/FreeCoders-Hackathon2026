@@ -1,7 +1,21 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Sun, LogOut, ClipboardList, HardHat, FileText, Globe, RefreshCw, Database } from 'lucide-react';
+import {
+  Sun,
+  LogOut,
+  ClipboardList,
+  HardHat,
+  FileText,
+  Globe,
+  RefreshCw,
+  Database,
+  Package,
+  Layers,
+  Calendar,
+  Truck,
+  QrCode,
+} from 'lucide-react';
 
 export default function Navbar() {
   const { user, logout, useMock, toggleMockMode, resetMockData } = useAuth();
@@ -15,9 +29,9 @@ export default function Navbar() {
 
   const navItemClass = (path) => {
     const active = location.pathname.startsWith(path);
-    return `inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg transition ${
+    return `inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
       active
-        ? 'bg-amber-50 text-amber-900 font-semibold shadow-xs'
+        ? 'bg-amber-50 text-amber-900 font-bold shadow-xs'
         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
     }`;
   };
@@ -27,57 +41,84 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Brand Logo */}
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4">
             <Link to="/" className="flex items-center gap-2.5 group">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-400 flex items-center justify-center text-white shadow-md shadow-amber-500/20 group-hover:scale-105 transition">
-                <Sun className="w-6 h-6 animate-spin-slow" />
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-400 flex items-center justify-center text-white shadow-md shadow-amber-500/20 group-hover:scale-105 transition">
+                <Sun className="w-5 h-5 animate-spin-slow" />
               </div>
               <div>
-                <span className="font-extrabold text-xl tracking-tight text-slate-900">
+                <span className="font-extrabold text-lg tracking-tight text-slate-900">
                   Sun<span className="text-amber-500">Power</span>
                 </span>
-                <span className="hidden sm:inline-block ml-2 text-[10px] uppercase font-bold tracking-widest text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
-                  Solar CRM
+                <span className="hidden sm:inline-block ml-1.5 text-[10px] uppercase font-bold tracking-widest text-slate-400 bg-slate-100 px-1 py-0.5 rounded">
+                  CRM
                 </span>
               </div>
             </Link>
 
             {/* Navigation Links based on role */}
             {user && (
-              <nav className="hidden md:flex items-center gap-1.5 ml-4">
+              <nav className="hidden lg:flex items-center gap-1 ml-2">
                 {(user.role === 'ADMIN' || user.role === 'STAFF') && (
-                  <Link to="/leads" className={navItemClass('/leads')}>
-                    <ClipboardList className="w-4 h-4 text-amber-600" />
-                    Lead Inbox
-                  </Link>
+                  <>
+                    <Link to="/leads" className={navItemClass('/leads')}>
+                      <ClipboardList className="w-4 h-4 text-amber-600" />
+                      <span>Leads</span>
+                    </Link>
+
+                    <Link to="/orders" className={navItemClass('/orders')}>
+                      <Package className="w-4 h-4 text-indigo-600" />
+                      <span>Orders & Dispatch</span>
+                    </Link>
+
+                    <Link to="/inventory" className={navItemClass('/inventory')}>
+                      <Layers className="w-4 h-4 text-amber-500" />
+                      <span>Inventory</span>
+                    </Link>
+
+                    <Link to="/jobs" className={navItemClass('/jobs')}>
+                      <Truck className="w-4 h-4 text-emerald-600" />
+                      <span>Crew Schedule</span>
+                    </Link>
+                  </>
                 )}
 
                 {user.role === 'TECHNICIAN' && (
-                  <Link to="/surveys" className={navItemClass('/surveys')}>
-                    <HardHat className="w-4 h-4 text-indigo-600" />
-                    My Field Surveys
-                  </Link>
+                  <>
+                    <Link to="/surveys" className={navItemClass('/surveys')}>
+                      <HardHat className="w-4 h-4 text-indigo-600" />
+                      <span>My Field Surveys</span>
+                    </Link>
+                    <Link to="/jobs" className={navItemClass('/jobs')}>
+                      <Truck className="w-4 h-4 text-emerald-600" />
+                      <span>Installation Jobs</span>
+                    </Link>
+                  </>
                 )}
 
                 {(user.role === 'ADMIN' || user.role === 'STAFF') && (
                   <Link to="/surveys" className={navItemClass('/surveys')}>
-                    <HardHat className="w-4 h-4 text-slate-500" />
-                    Technician View
+                    <HardHat className="w-4 h-4 text-slate-400" />
+                    <span>Technician View</span>
                   </Link>
                 )}
 
-                <Link to="/enquiry" target="_blank" className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-500 hover:text-amber-700 bg-slate-50 hover:bg-amber-50 rounded-lg border border-slate-200 transition">
+                <Link
+                  to="/enquiry"
+                  target="_blank"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-slate-500 hover:text-amber-700 bg-slate-50 hover:bg-amber-50 rounded-lg border border-slate-200 transition ml-1"
+                >
                   <Globe className="w-3.5 h-3.5 text-amber-500" />
-                  Public Enquiry Page ↗
+                  <span>Enquiry ↗</span>
                 </Link>
               </nav>
             )}
           </div>
 
           {/* Right section: Mode switch + User status */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             {/* Mode Switcher pill */}
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
               <button
                 onClick={toggleMockMode}
                 title="Click to toggle between Mock Database and Local PostgreSQL"
@@ -88,7 +129,7 @@ export default function Navbar() {
                 }`}
               >
                 <Database className="w-3.5 h-3.5" />
-                <span>{useMock ? 'Mock DB (Offline Demo)' : 'Live Backend (PostgreSQL)'}</span>
+                <span className="hidden sm:inline">{useMock ? 'Mock DB' : 'PostgreSQL'}</span>
               </button>
 
               {useMock && (
@@ -103,10 +144,10 @@ export default function Navbar() {
             </div>
 
             {user ? (
-              <div className="flex items-center gap-3 pl-3 border-l border-slate-200">
+              <div className="flex items-center gap-2.5 pl-2.5 border-l border-slate-200">
                 <div className="text-right hidden sm:block">
-                  <div className="text-sm font-semibold text-slate-800">{user.name}</div>
-                  <div className="text-[11px] font-medium text-amber-700 bg-amber-50 px-2 py-0.2 inline-block rounded-full border border-amber-200">
+                  <div className="text-xs font-bold text-slate-800">{user.name}</div>
+                  <div className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.2 inline-block rounded-full border border-amber-200">
                     {user.role}
                   </div>
                 </div>
@@ -114,24 +155,24 @@ export default function Navbar() {
                 <button
                   onClick={handleLogout}
                   title="Logout"
-                  className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition"
+                  className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition"
                 >
-                  <LogOut className="w-5 h-5" />
+                  <LogOut className="w-4 h-4" />
                 </button>
               </div>
             ) : (
               <div className="flex items-center gap-2">
                 <Link
                   to="/login"
-                  className="px-4 py-2 text-sm font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-xl shadow-xs transition"
+                  className="px-3 py-1.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-xl shadow-xs transition"
                 >
                   Sign In
                 </Link>
                 <Link
                   to="/enquiry"
-                  className="px-4 py-2 text-sm font-semibold text-amber-900 bg-amber-400 hover:bg-amber-300 rounded-xl shadow-xs transition"
+                  className="px-3 py-1.5 text-xs font-semibold text-amber-900 bg-amber-400 hover:bg-amber-300 rounded-xl shadow-xs transition"
                 >
-                  Customer Enquiry
+                  Enquiry
                 </Link>
               </div>
             )}

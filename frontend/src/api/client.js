@@ -1,5 +1,14 @@
 import axios from 'axios';
-import { initialUsers, initialLeads, initialPackageTemplates, initialQuotes, initialProducts } from './mockData';
+import {
+  initialUsers,
+  initialLeads,
+  initialPackageTemplates,
+  initialQuotes,
+  initialProducts,
+  initialOrders,
+  initialSerials,
+  initialInstallationJobs
+} from './mockData';
 import { canTransition, LEAD_STATUS } from '../utils/leadStatus';
 import { adaptRequest, adaptResponse } from './liveAdapter';
 import { TOKEN_KEY, getStoredToken, getCurrentUser, makeMockToken } from '../utils/authToken';
@@ -68,6 +77,9 @@ class MockDatabase {
         this.templates = parsed.templates || initialPackageTemplates;
         this.quotes = parsed.quotes || initialQuotes;
         this.products = parsed.products || initialProducts;
+        this.orders = parsed.orders || initialOrders;
+        this.serials = parsed.serials || initialSerials;
+        this.jobs = parsed.jobs || initialInstallationJobs;
         return;
       }
     } catch (e) {
@@ -84,6 +96,9 @@ class MockDatabase {
         templates: this.templates,
         quotes: this.quotes,
         products: this.products,
+        orders: this.orders,
+        serials: this.serials,
+        jobs: this.jobs,
       }));
     } catch (e) {
       console.error('Error saving mock database', e);
@@ -96,6 +111,9 @@ class MockDatabase {
     this.templates = JSON.parse(JSON.stringify(initialPackageTemplates));
     this.quotes = JSON.parse(JSON.stringify(initialQuotes));
     this.products = JSON.parse(JSON.stringify(initialProducts));
+    this.orders = JSON.parse(JSON.stringify(initialOrders));
+    this.serials = JSON.parse(JSON.stringify(initialSerials));
+    this.jobs = JSON.parse(JSON.stringify(initialInstallationJobs));
     this.save();
   }
 }
@@ -672,6 +690,41 @@ async function mockRequest(method, url, data = null, params = null) {
           notes: `Quote accepted by customer! Project marked as WON. Ready for installation.`,
           created_at: new Date().toISOString(),
         });
+
+        // Phase 2: Auto-create Order when Quote is ACCEPTED
+        mockDb.orders = mockDb.orders || [];
+        const existingOrder = mockDb.orders.find((o) => o.quote_id === quote.id);
+        if (!existingOrder) {
+          const newOrderNumber = `ORD-${Date.now().toString().slice(-4)}`;
+          const totalAmt = quote.total_amount || quote.total || 0;
+          const advanceRequired = Math.round(totalAmt * 0.3 * 100) / 100;
+          const newOrder = {
+            id: Date.now(),
+            order_number: newOrderNumber,
+            lead_id: lead.id,
+            quote_id: quote.id,
+            status: 'PENDING_PAYMENT',
+            total_amount: totalAmt,
+            advance_required: advanceRequired,
+            amount_paid: 0.0,
+            created_at: new Date().toISOString(),
+            lead: {
+              id: lead.id,
+              customer_name: lead.customer_name,
+              phone: lead.phone,
+              address: lead.address,
+              city: lead.city,
+              state: lead.state,
+              pincode: lead.pincode,
+            },
+            payments: [],
+            pick_list: [],
+            dispatch: null,
+            job: null,
+            warranties: [],
+          };
+          mockDb.orders.unshift(newOrder);
+        }
       } else if (newQuoteStatus === 'REJECTED' && lead.status !== LEAD_STATUS.LOST) {
         const prevStatus = lead.status;
         lead.status = LEAD_STATUS.LOST;
@@ -696,6 +749,418 @@ async function mockRequest(method, url, data = null, params = null) {
   const pdfMatch = cleanUrl.match(/^\/quotes\/(\d+)\/pdf$/);
   if (pdfMatch && method === 'get') {
     return { success: true, data: { pdf_url: `/quotes/${pdfMatch[1]}?print=true` } };
+  }
+
+  // =========================================================================
+  // PHASE 2 MOCK ENDPOINTS (Orders, Payments, Inventory, Scanning, Dispatch)
+  // =========================================================================
+
+  // 18. GET /orders
+  if (cleanUrl === '/orders' && method === 'get') {
+    let list = [...(mockDb.orders || [])];
+    const status = params?.status;
+    const search = params?.search?.toLowerCase();
+    if (status && status !== 'ALL') {
+      list = list.filter((o) => o.status === status);
+    }
+    if (search) {
+      list = list.filter(
+        (o) =>
+          o.order_number?.toLowerCase().includes(search) ||
+          o.lead?.customer_name?.toLowerCase().includes(search) ||
+          o.lead?.city?.toLowerCase().includes(search)
+      );
+    }
+    return { success: true, data: list };
+  }
+
+  // 19. GET /orders/:id
+  const orderMatch = cleanUrl.match(/^\/orders\/(\d+)$/);
+  if (orderMatch && method === 'get') {
+    const orderId = Number(orderMatch[1]);
+    const order = (mockDb.orders || []).find((o) => o.id === orderId);
+    if (!order) {
+      throw { response: { status: 404, data: { success: false, error: { code: 'NOT_FOUND', message: 'Order not found' } } } };
+    }
+    return { success: true, data: order };
+  }
+
+  // 20. POST /orders/:id/payments
+  const orderPaymentMatch = cleanUrl.match(/^\/orders\/(\d+)\/payments$/);
+  if (orderPaymentMatch && method === 'post') {
+    const orderId = Number(orderPaymentMatch[1]);
+    const order = (mockDb.orders || []).find((o) => o.id === orderId);
+    if (!order) {
+      throw { response: { status: 404, data: { success: false, error: { code: 'NOT_FOUND', message: 'Order not found' } } } };
+    }
+
+    const payAmount = Number(data.amount) || 0;
+    const newPayment = {
+      id: Date.now(),
+      order_id: order.id,
+      amount: payAmount,
+      type: data.type || 'ADVANCE',
+      mode: data.mode || 'UPI',
+      reference: data.reference || `REF-${Date.now().toString().slice(-6)}`,
+      received_by: currentUser?.name || 'Staff',
+      paid_at: new Date().toISOString(),
+    };
+
+    order.payments = order.payments || [];
+    order.payments.unshift(newPayment);
+    order.amount_paid = (order.amount_paid || 0) + payAmount;
+
+    // Crossing advance threshold (30%) -> Order is CONFIRMED + Pick List + Job generated!
+    let confirmedNow = false;
+    if (order.amount_paid >= order.advance_required && order.status === 'PENDING_PAYMENT') {
+      order.status = 'CONFIRMED';
+      confirmedNow = true;
+
+      // Build pick list from quote items
+      const quote = (mockDb.quotes || []).find((q) => q.id === order.quote_id);
+      if (quote && quote.items) {
+        order.pick_list = quote.items
+          .filter((i) => i.category !== 'SERVICE')
+          .map((item, idx) => ({
+            id: idx + 1,
+            order_id: order.id,
+            product_id: item.product_id,
+            product_name: item.product_name,
+            sku: item.sku,
+            category: item.category,
+            is_serialized: item.is_serialized !== false,
+            qty_required: item.quantity,
+            qty_scanned: item.is_serialized === false ? item.quantity : 0,
+            scanned_serials: [],
+          }));
+      }
+
+      // Automatically create installation job
+      const newJob = {
+        id: Date.now(),
+        order_id: order.id,
+        order_number: order.order_number,
+        customer_name: order.lead?.customer_name,
+        phone: order.lead?.phone,
+        city: order.lead?.city,
+        capacity_kw: quote?.capacity_kw || 3.0,
+        system_type: quote?.system_type || 'ON_GRID',
+        crew_lead_id: 3,
+        crew_lead_name: 'Rohan Deshmukh',
+        scheduled_date: new Date(Date.now() + 5 * 86400000).toISOString(),
+        status: 'SCHEDULED',
+      };
+      order.job = newJob;
+      mockDb.jobs = mockDb.jobs || [];
+      mockDb.jobs.unshift(newJob);
+    }
+
+    mockDb.save();
+    return { success: true, data: { payment: newPayment, order, confirmed: confirmedNow } };
+  }
+
+  // 21. GET /inventory
+  if (cleanUrl === '/inventory' && method === 'get') {
+    const products = (mockDb.products || []).map((p) => {
+      const serials = (mockDb.serials || []).filter((s) => s.product_id === p.id);
+      const in_stock_count = serials.filter((s) => s.status === 'IN_STOCK').length;
+      const reserved_count = serials.filter((s) => s.status === 'RESERVED').length;
+      const dispatched_count = serials.filter((s) => s.status === 'DISPATCHED' || s.status === 'DELIVERED').length;
+      const effective_stock = p.is_serialized ? in_stock_count : (p.stock_qty || 0);
+      const low_stock = effective_stock <= (p.reorder_level || 5);
+
+      return {
+        ...p,
+        serials_in_stock: in_stock_count,
+        serials_reserved: reserved_count,
+        serials_dispatched: dispatched_count,
+        effective_stock,
+        low_stock,
+      };
+    });
+    return { success: true, data: products };
+  }
+
+  // 22. POST /inventory/receive
+  if (cleanUrl === '/inventory/receive' && method === 'post') {
+    const prodId = Number(data.product_id || data.productId);
+    const product = (mockDb.products || []).find((p) => p.id === prodId);
+    if (!product) {
+      throw { response: { status: 404, data: { success: false, error: { code: 'NOT_FOUND', message: 'Product not found' } } } };
+    }
+
+    mockDb.serials = mockDb.serials || [];
+
+    if (Array.isArray(data.serials) && data.serials.length > 0) {
+      data.serials.forEach((sn) => {
+        const cleanSn = String(sn).trim();
+        if (cleanSn) {
+          mockDb.serials.push({
+            id: Date.now() + Math.random(),
+            product_id: product.id,
+            serial_number: cleanSn,
+            status: 'IN_STOCK',
+            order_id: null,
+            received_at: new Date().toISOString(),
+          });
+        }
+      });
+      product.stock_qty = (product.stock_qty || 0) + data.serials.length;
+    } else if (data.quantity) {
+      product.stock_qty = (product.stock_qty || 0) + Number(data.quantity);
+    }
+
+    mockDb.save();
+    return { success: true, data: { product, serials_received: data.serials?.length || data.quantity } };
+  }
+
+  // 23. GET /inventory/serials
+  if (cleanUrl === '/inventory/serials' && method === 'get') {
+    let serials = [...(mockDb.serials || [])];
+    if (params?.productId) {
+      serials = serials.filter((s) => s.product_id === Number(params.productId));
+    }
+    if (params?.status && params.status !== 'ALL') {
+      serials = serials.filter((s) => s.status === params.status);
+    }
+    return { success: true, data: serials };
+  }
+
+  // 24. GET /orders/:id/pick-list
+  const orderPickListMatch = cleanUrl.match(/^\/orders\/(\d+)\/pick-list$/);
+  if (orderPickListMatch && method === 'get') {
+    const orderId = Number(orderPickListMatch[1]);
+    const order = (mockDb.orders || []).find((o) => o.id === orderId);
+    if (!order) {
+      throw { response: { status: 404, data: { success: false, error: { code: 'NOT_FOUND', message: 'Order not found' } } } };
+    }
+    return { success: true, data: order.pick_list || [] };
+  }
+
+  // 25. POST /orders/:id/scan (409 checks for demo rehearsal)
+  const scanMatch = cleanUrl.match(/^\/orders\/(\d+)\/scan$/);
+  if (scanMatch && method === 'post') {
+    const orderId = Number(scanMatch[1]);
+    const order = (mockDb.orders || []).find((o) => o.id === orderId);
+    if (!order) throw { response: { status: 404, data: { success: false, error: { code: 'NOT_FOUND', message: 'Order not found' } } } };
+
+    const sn = String(data.serialNumber || data.serial_number || '').trim();
+    const serial = (mockDb.serials || []).find((s) => s.serial_number?.toUpperCase() === sn.toUpperCase());
+
+    // Error 1: Serial not found
+    if (!serial) {
+      throw {
+        response: {
+          status: 409,
+          data: { success: false, error: { code: 'SERIAL_NOT_FOUND', message: `Serial "${sn}" not found in inventory` } },
+        },
+      };
+    }
+
+    // Error 2: Already reserved or dispatched (Rehearsal Moment!)
+    if (serial.status !== 'IN_STOCK') {
+      throw {
+        response: {
+          status: 409,
+          data: {
+            success: false,
+            error: {
+              code: 'SERIAL_ALREADY_RESERVED',
+              message: `Serial "${serial.serial_number}" is already ${serial.status} for ${serial.order_id || 'another order'}`,
+            },
+          },
+        },
+      };
+    }
+
+    // Error 3: Not on pick list
+    const pickItem = (order.pick_list || []).find((item) => item.product_id === serial.product_id);
+    if (!pickItem) {
+      throw {
+        response: {
+          status: 409,
+          data: {
+            success: false,
+            error: {
+              code: 'NOT_ON_PICK_LIST',
+              message: `Product for serial "${sn}" is not required on this order's pick list`,
+            },
+          },
+        },
+      };
+    }
+
+    // Error 4: Line already fully scanned
+    if (pickItem.qty_scanned >= pickItem.qty_required) {
+      throw {
+        response: {
+          status: 409,
+          data: {
+            success: false,
+            error: {
+              code: 'LINE_FULLY_SCANNED',
+              message: `Item "${pickItem.product_name}" is already fully scanned (${pickItem.qty_scanned}/${pickItem.qty_required})`,
+            },
+          },
+        },
+      };
+    }
+
+    // Success: Reserve serial
+    serial.status = 'RESERVED';
+    serial.order_id = order.order_number;
+    pickItem.qty_scanned = (pickItem.qty_scanned || 0) + 1;
+    pickItem.scanned_serials = pickItem.scanned_serials || [];
+    pickItem.scanned_serials.push(serial.serial_number);
+
+    mockDb.save();
+    return { success: true, data: { pick_list: order.pick_list, scanned: serial } };
+  }
+
+  // 26. DELETE /orders/:id/scan/:serialNumber (Undo scan)
+  const undoScanMatch = cleanUrl.match(/^\/orders\/(\d+)\/scan\/(.+)$/);
+  if (undoScanMatch && method === 'delete') {
+    const orderId = Number(undoScanMatch[1]);
+    const sn = decodeURIComponent(undoScanMatch[2]).trim();
+    const order = (mockDb.orders || []).find((o) => o.id === orderId);
+    if (!order) throw { response: { status: 404, data: { success: false, error: { code: 'NOT_FOUND', message: 'Order not found' } } } };
+
+    const serial = (mockDb.serials || []).find((s) => s.serial_number?.toUpperCase() === sn.toUpperCase());
+    if (serial) {
+      serial.status = 'IN_STOCK';
+      serial.order_id = null;
+    }
+
+    (order.pick_list || []).forEach((item) => {
+      if ((item.scanned_serials || []).some((s) => s.toUpperCase() === sn.toUpperCase())) {
+        item.scanned_serials = item.scanned_serials.filter((s) => s.toUpperCase() !== sn.toUpperCase());
+        item.qty_scanned = Math.max(0, item.qty_scanned - 1);
+      }
+    });
+
+    mockDb.save();
+    return { success: true, data: { pick_list: order.pick_list, undone: sn } };
+  }
+
+  // 27. POST /orders/:id/dispatch
+  const dispatchMatch = cleanUrl.match(/^\/orders\/(\d+)\/dispatch$/);
+  if (dispatchMatch && method === 'post') {
+    const orderId = Number(dispatchMatch[1]);
+    const order = (mockDb.orders || []).find((o) => o.id === orderId);
+    if (!order) throw { response: { status: 404, data: { success: false, error: { code: 'NOT_FOUND', message: 'Order not found' } } } };
+
+    // Check pick list completion
+    const incomplete = (order.pick_list || []).some((i) => i.qty_scanned < i.qty_required);
+    if (incomplete) {
+      throw {
+        response: {
+          status: 409,
+          data: {
+            success: false,
+            error: {
+              code: 'PICK_LIST_INCOMPLETE',
+              message: 'Cannot dispatch: Pick list is incomplete. All items must be fully scanned or picked.',
+            },
+          },
+        },
+      };
+    }
+
+    // Mark serials DISPATCHED and decrement bulk stock
+    (order.pick_list || []).forEach((item) => {
+      if (item.is_serialized) {
+        (item.scanned_serials || []).forEach((sn) => {
+          const s = (mockDb.serials || []).find((x) => x.serial_number === sn);
+          if (s) s.status = 'DISPATCHED';
+        });
+      } else {
+        const prod = (mockDb.products || []).find((p) => p.id === item.product_id);
+        if (prod) prod.stock_qty = Math.max(0, (prod.stock_qty || 0) - item.qty_required);
+      }
+    });
+
+    order.status = 'DISPATCHED';
+    order.dispatch = {
+      id: Date.now(),
+      order_id: order.id,
+      vehicle_no: data.vehicleNo || data.vehicle_no || 'MH 12 Solar 01',
+      driver_name: data.driverName || data.driver_name || 'Driver',
+      dispatched_at: new Date().toISOString(),
+      dispatched_by: currentUser?.name || 'Staff',
+      delivered_at: null,
+      delivered_confirmed_by: null,
+    };
+
+    mockDb.save();
+    return { success: true, data: order };
+  }
+
+  // 28. POST /orders/:id/deliver
+  const deliverMatch = cleanUrl.match(/^\/orders\/(\d+)\/deliver$/);
+  if (deliverMatch && method === 'post') {
+    const orderId = Number(deliverMatch[1]);
+    const order = (mockDb.orders || []).find((o) => o.id === orderId);
+    if (!order) throw { response: { status: 404, data: { success: false, error: { code: 'NOT_FOUND', message: 'Order not found' } } } };
+
+    order.status = 'DELIVERED';
+    order.dispatch = order.dispatch || {};
+    order.dispatch.delivered_at = new Date().toISOString();
+    order.dispatch.delivered_confirmed_by = currentUser?.name || 'Technician';
+
+    // Start warranty for every serial
+    order.warranties = order.warranties || [];
+    (order.pick_list || []).forEach((item) => {
+      const prod = (mockDb.products || []).find((p) => p.id === item.product_id);
+      (item.scanned_serials || []).forEach((sn) => {
+        const ser = (mockDb.serials || []).find((x) => x.serial_number === sn);
+        if (ser) ser.status = 'DELIVERED';
+
+        const months = prod?.warranty_months || (prod?.category === 'PANEL' ? 240 : 24);
+        const startDate = new Date();
+        const endDate = new Date(startDate);
+        endDate.setMonth(endDate.getMonth() + months);
+
+        order.warranties.push({
+          id: Date.now() + Math.random(),
+          inventory_item_id: ser?.id || 1,
+          serial_number: sn,
+          product_name: item.product_name,
+          category: item.category,
+          start_date: startDate.toISOString(),
+          end_date: endDate.toISOString(),
+          months,
+        });
+      });
+    });
+
+    mockDb.save();
+    return { success: true, data: order };
+  }
+
+  // 29. GET /jobs
+  if (cleanUrl === '/jobs' && method === 'get') {
+    return { success: true, data: mockDb.jobs || [] };
+  }
+
+  // 30. PATCH /jobs/:id/assign
+  const jobAssignMatch = cleanUrl.match(/^\/jobs\/(\d+)\/assign$/);
+  if (jobAssignMatch && method === 'patch') {
+    const jobId = Number(jobAssignMatch[1]);
+    const job = (mockDb.jobs || []).find((j) => j.id === jobId);
+    if (!job) throw { response: { status: 404, data: { success: false, error: { code: 'NOT_FOUND', message: 'Job not found' } } } };
+
+    const techId = Number(data.crewLeadId || data.crew_lead_id);
+    const tech = (mockDb.users || []).find((u) => u.id === techId);
+    if (tech) {
+      job.crew_lead_id = tech.id;
+      job.crew_lead_name = tech.name;
+    }
+    if (data.scheduledDate || data.scheduled_date) {
+      job.scheduled_date = data.scheduledDate || data.scheduled_date;
+    }
+
+    mockDb.save();
+    return { success: true, data: job };
   }
 
   throw {
