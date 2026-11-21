@@ -87,11 +87,11 @@ export default function Navbar() {
                   <>
                     <Link to="/surveys" className={navItemClass('/surveys')}>
                       <HardHat className="w-4 h-4 text-indigo-600" />
-                      <span>My Field Surveys</span>
+                      <span>My Tasks & To-Do</span>
                     </Link>
                     <Link to="/jobs" className={navItemClass('/jobs')}>
                       <Truck className="w-4 h-4 text-emerald-600" />
-                      <span>Installation Jobs</span>
+                      <span>Installation Schedule</span>
                     </Link>
                   </>
                 )}

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/client';
 import Modal from '../components/Modal';
+import { useAuth } from '../context/AuthContext';
 import {
   Calendar,
   Truck,
@@ -19,6 +20,7 @@ import {
 } from 'lucide-react';
 
 export default function CrewSchedule() {
+  const { user } = useAuth();
   const [jobs, setJobs] = useState([]);
   const [technicians, setTechnicians] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -32,6 +34,21 @@ export default function CrewSchedule() {
   const [assignLoading, setAssignLoading] = useState(false);
   const [assignError, setAssignError] = useState(null);
   const [assignSuccess, setAssignSuccess] = useState(null);
+  const [completeLoadingId, setCompleteLoadingId] = useState(null);
+
+  const handleCompleteJob = async (jobId) => {
+    if (!window.confirm('Mark this solar plant installation as completed and commissioned?')) return;
+    try {
+      setCompleteLoadingId(jobId);
+      await api.post(`/jobs/${jobId}/complete`, { remarks: 'Installation completed on site' });
+      alert('✓ Installation marked as COMPLETED! Order updated to INSTALLED.');
+      await fetchJobsAndTechs();
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'Failed to complete job.');
+    } finally {
+      setCompleteLoadingId(null);
+    }
+  };
 
   const fetchJobsAndTechs = async () => {
     try {
@@ -252,7 +269,7 @@ export default function CrewSchedule() {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between pt-2">
+                    <div className="flex items-center justify-between pt-2 flex-wrap gap-1.5">
                       <Link
                         to={`/orders/${job.order_id}`}
                         className="text-xs font-semibold text-slate-500 hover:text-slate-800 flex items-center gap-1"
@@ -261,12 +278,39 @@ export default function CrewSchedule() {
                         <ArrowRight className="w-3 h-3" />
                       </Link>
 
-                      <button
-                        onClick={() => handleOpenAssignModal(job)}
-                        className="px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition border border-indigo-200"
-                      >
-                        Assign Crew Lead
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        {job.status !== 'COMPLETED' ? (
+                          <button
+                            disabled={completeLoadingId === job.id}
+                            onClick={() => handleCompleteJob(job.id)}
+                            className="px-2.5 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-xl transition border border-emerald-200"
+                          >
+                            {completeLoadingId === job.id ? 'Completing...' : 'Mark Done ✓'}
+                          </button>
+                        ) : (
+                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg">
+                            Completed ✓
+                          </span>
+                        )}
+
+                        {(user?.role === 'ADMIN' || user?.role === 'STAFF') && (
+                          <button
+                            onClick={() => handleOpenAssignModal(job)}
+                            className="px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition border border-indigo-200"
+                          >
+                            Assign Crew
+                          </button>
+                        )}
+
+                        {user?.role === 'TECHNICIAN' && (
+                          <Link
+                            to={`/orders/${job.order_id}/scan`}
+                            className="px-2.5 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition border border-indigo-200"
+                          >
+                            Scan →
+                          </Link>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}

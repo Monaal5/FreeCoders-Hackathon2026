@@ -1146,7 +1146,11 @@ async function mockRequest(method, url, data = null, params = null) {
 
   // 29. GET /jobs
   if (cleanUrl === '/jobs' && method === 'get') {
-    return { success: true, data: mockDb.jobs || [] };
+    let list = mockDb.jobs || [];
+    if (currentUser?.role === 'TECHNICIAN') {
+      list = list.filter((j) => Number(j.crew_lead_id) === Number(currentUser.id));
+    }
+    return { success: true, data: list };
   }
 
   // 30. PATCH /jobs/:id/assign
@@ -1166,8 +1170,79 @@ async function mockRequest(method, url, data = null, params = null) {
       job.scheduled_date = data.scheduledDate || data.scheduled_date;
     }
 
+    // Also sync the order's job object so OrderDetail reflects assignment immediately
+    const order = (mockDb.orders || []).find((o) => o.id === job.order_id);
+    if (order) {
+      order.job = { ...(order.job || {}), ...job };
+      order.installation_job = { ...(order.installation_job || {}), ...job };
+    }
+
     mockDb.save();
     return { success: true, data: job };
+  }
+
+  // 31. POST /jobs/:id/complete
+  const jobCompleteMatch = cleanUrl.match(/^\/jobs\/(\d+)\/complete$/);
+  if (jobCompleteMatch && method === 'post') {
+    const jobId = Number(jobCompleteMatch[1]);
+    const job = (mockDb.jobs || []).find((j) => j.id === jobId);
+    if (!job) throw { response: { status: 404, data: { success: false, error: { code: 'NOT_FOUND', message: 'Job not found' } } } };
+
+    job.status = 'COMPLETED';
+    job.completed_at = new Date().toISOString();
+    if (data.remarks) job.notes = data.remarks;
+
+    // Update matching order to INSTALLED
+    const order = (mockDb.orders || []).find((o) => o.id === job.order_id);
+    if (order) {
+      order.status = 'INSTALLED';
+      if (order.job) order.job.status = 'COMPLETED';
+      if (order.installation_job) order.installation_job.status = 'COMPLETED';
+      if (order.scanned_serials) {
+        order.scanned_serials.forEach((s) => {
+          s.status = 'INSTALLED';
+        });
+      }
+    }
+
+    // Update physical inventory serial items to INSTALLED
+    (mockDb.serials || []).forEach((s) => {
+      if (s.order_id === job.order_id) {
+        s.status = 'INSTALLED';
+      }
+    });
+
+    mockDb.save();
+    return { success: true, data: job };
+  }
+
+  // 32. POST /orders/:id/install
+  const orderInstallMatch = cleanUrl.match(/^\/orders\/(\d+)\/install$/);
+  if (orderInstallMatch && method === 'post') {
+    const orderId = Number(orderInstallMatch[1]);
+    const order = (mockDb.orders || []).find((o) => o.id === orderId);
+    if (!order) throw { response: { status: 404, data: { success: false, error: { code: 'NOT_FOUND', message: 'Order not found' } } } };
+
+    order.status = 'INSTALLED';
+    if (order.job) order.job.status = 'COMPLETED';
+    if (order.installation_job) order.installation_job.status = 'COMPLETED';
+
+    const job = (mockDb.jobs || []).find((j) => j.order_id === orderId);
+    if (job) job.status = 'COMPLETED';
+
+    if (order.scanned_serials) {
+      order.scanned_serials.forEach((s) => {
+        s.status = 'INSTALLED';
+      });
+    }
+    (mockDb.serials || []).forEach((s) => {
+      if (s.order_id === orderId) {
+        s.status = 'INSTALLED';
+      }
+    });
+
+    mockDb.save();
+    return { success: true, data: order };
   }
 
   throw {

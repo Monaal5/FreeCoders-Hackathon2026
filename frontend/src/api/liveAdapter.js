@@ -307,7 +307,8 @@ function adaptPhase2(method, url, data) {
     };
   }
   if (url === '/inventory/serials') return data.map(normalizeSerial);
-  if (url === '/jobs' && method === 'get') return data.map(normalizeJob);
+  if (url.startsWith('/jobs') && method === 'get') return data.map(normalizeJob);
+  if (/^\/jobs\/\d+\/complete$/.test(url)) return normalizeJob(data);
   return undefined;
 }
 

@@ -20,7 +20,7 @@ DO $$ BEGIN CREATE TYPE payment_mode   AS ENUM ('UPI', 'CASH', 'BANK', 'CHEQUE')
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE stock_reason   AS ENUM ('RECEIVED', 'DISPATCHED', 'ADJUSTED');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN CREATE TYPE job_status     AS ENUM ('SCHEDULED');           -- Phase 3 adds the rest
+DO $$ BEGIN CREATE TYPE job_status     AS ENUM ('SCHEDULED', 'IN_PROGRESS', 'COMPLETED');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ---------- products: stock & warranty settings ----------

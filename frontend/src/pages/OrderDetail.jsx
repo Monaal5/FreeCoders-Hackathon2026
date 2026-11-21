@@ -57,6 +57,26 @@ export default function OrderDetail() {
   const [deliveryLoading, setDeliveryLoading] = useState(false);
   const [deliveryError, setDeliveryError] = useState(null);
   const [deliverySuccessMsg, setDeliverySuccessMsg] = useState(null);
+  const [completeInstallLoading, setCompleteInstallLoading] = useState(false);
+
+  const handleCompleteInstallation = async () => {
+    if (!window.confirm('Mark this solar plant installation as completed and commissioned on site?')) return;
+    try {
+      setCompleteInstallLoading(true);
+      if (order.job?.id) {
+        await api.post(`/jobs/${order.job.id}/complete`, { remarks: 'Site installation completed and commissioned.' });
+      } else {
+        await api.post(`/orders/${id}/install`, {});
+      }
+      setDeliverySuccessMsg('Installation marked as COMPLETED! Plant commissioning verified.');
+      await fetchOrder();
+    } catch (err) {
+      console.error('Installation complete error:', err);
+      alert(err.response?.data?.message || 'Failed to complete installation.');
+    } finally {
+      setCompleteInstallLoading(false);
+    }
+  };
 
   const fetchOrder = async () => {
     try {
@@ -371,6 +391,17 @@ export default function OrderDetail() {
             </button>
           )}
 
+          {order.status === ORDER_STATUS.DELIVERED && (
+            <button
+              onClick={handleCompleteInstallation}
+              disabled={completeInstallLoading}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{completeInstallLoading ? 'Completing...' : 'Mark Installation Complete ✓'}</span>
+            </button>
+          )}
+
           {paid < total && order.status !== ORDER_STATUS.PENDING_PAYMENT && (
             <button
               onClick={() => {
@@ -630,10 +661,10 @@ export default function OrderDetail() {
               </Link>
             </div>
             {order.job ? (
-              <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl text-xs space-y-1">
+              <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl text-xs space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-indigo-900">Job #{order.job.id}</span>
-                  <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-indigo-200 text-indigo-800">
+                  <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${order.job.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' : 'bg-indigo-200 text-indigo-800'}`}>
                     {order.job.status}
                   </span>
                 </div>
@@ -643,6 +674,15 @@ export default function OrderDetail() {
                 <div className="text-slate-600">
                   <strong>Lead Tech:</strong> {order.job.crew_lead_name || 'Unassigned'}
                 </div>
+                {order.job.status !== 'COMPLETED' && (
+                  <button
+                    onClick={handleCompleteInstallation}
+                    disabled={completeInstallLoading}
+                    className="w-full mt-2 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs shadow-xs transition"
+                  >
+                    {completeInstallLoading ? 'Completing...' : 'Mark Installation Done ✓'}
+                  </button>
+                )}
               </div>
             ) : (
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500">

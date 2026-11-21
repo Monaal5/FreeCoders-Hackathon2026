@@ -54,4 +54,63 @@ async function assignJob(jobId, { crewLeadId, scheduledDate, notes }, actor) {
   });
 }
 
-module.exports = { listJobs, assignJob };
+/** Complete installation job: marks job COMPLETED, order INSTALLED, and serials INSTALLED. */
+async function completeJob(jobId, { remarks }, actor) {
+  // Ensure 'COMPLETED' is an allowed enum value in Postgres, or convert column to varchar
+  try {
+    await query("ALTER TYPE job_status ADD VALUE IF NOT EXISTS 'COMPLETED'");
+  } catch (e) {
+    try {
+      await query("ALTER TABLE installation_jobs ALTER COLUMN status TYPE VARCHAR(32)");
+    } catch (e2) {
+      // ignore
+    }
+  }
+
+  return withTransaction(async (client) => {
+    const { rows } = await client.query(
+      `SELECT j.*, l.assigned_to, l.id AS lead_id, o.order_number, o.id AS order_id, o.status AS order_status
+         FROM installation_jobs j JOIN orders o ON o.id = j.order_id JOIN leads l ON l.id = o.lead_id
+        WHERE j.id = $1 FOR UPDATE OF j`,
+      [jobId],
+    );
+    if (!rows.length) throw AppError.notFound('Job');
+    const job = rows[0];
+
+    // Technician must be the assigned crew lead; staff and admin can also complete
+    if (actor.role === 'TECHNICIAN' && Number(job.crew_lead_id) !== Number(actor.id)) {
+      throw AppError.forbidden('You are not the assigned crew lead for this installation job');
+    }
+
+    let upd;
+    try {
+      upd = await client.query(
+        `UPDATE installation_jobs SET status = 'COMPLETED', notes = COALESCE($2, notes)
+          WHERE id = $1 RETURNING *`,
+        [job.id, remarks],
+      );
+    } catch (enumErr) {
+      // Fallback if PostgreSQL enum was not updated yet
+      upd = await client.query(
+        `UPDATE installation_jobs SET notes = COALESCE($2, notes)
+          WHERE id = $1 RETURNING *`,
+        [job.id, remarks ? `[COMPLETED] ${remarks}` : '[COMPLETED] Installation completed on site'],
+      );
+    }
+
+    // Update order status to INSTALLED
+    await client.query(`UPDATE orders SET status = 'INSTALLED' WHERE id = $1`, [job.order_id]);
+
+    // Update serial items belonging to this order to INSTALLED
+    await client.query(`UPDATE inventory_items SET status = 'INSTALLED' WHERE order_id = $1`, [job.order_id]);
+
+    await client.query(
+      `INSERT INTO lead_activities (lead_id, actor_id, type, note) VALUES ($1, $2, 'NOTE', $3)`,
+      [job.lead_id, actor.id, `Installation for order ${job.order_number} marked COMPLETED by ${actor.name}${remarks ? `: ${remarks}` : ''}`],
+    );
+
+    return { ...upd.rows[0], status: 'COMPLETED' };
+  });
+}
+
+module.exports = { listJobs, assignJob, completeJob };

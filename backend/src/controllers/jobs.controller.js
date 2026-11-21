@@ -32,4 +32,16 @@ async function assign(req, res) {
   );
 }
 
-module.exports = { list, assign };
+/** POST /api/jobs/:id/complete { remarks? } */
+async function complete(req, res) {
+  ok(
+    res,
+    await jobsService.completeJob(
+      toId(req.params.id),
+      { remarks: optionalText(req.body.remarks, 500) },
+      req.user,
+    ),
+  );
+}
+
+module.exports = { list, assign, complete };
