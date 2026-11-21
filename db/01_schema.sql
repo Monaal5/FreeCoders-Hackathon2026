@@ -15,6 +15,8 @@ CREATE TYPE survey_status    AS ENUM ('SCHEDULED', 'SUBMITTED', 'APPROVED', 'REJ
 CREATE TYPE quote_status     AS ENUM ('DRAFT', 'SENT', 'ACCEPTED', 'REJECTED');
 CREATE TYPE product_category AS ENUM ('PANEL', 'INVERTER', 'BATTERY', 'STRUCTURE', 'CABLE', 'BOS', 'SERVICE');
 CREATE TYPE activity_type    AS ENUM ('CREATED', 'ASSIGNED', 'STATUS_CHANGE', 'NOTE');
+-- What a package is: hardware-only panel set, a complete system, or the installation service add-on
+CREATE TYPE package_kind     AS ENUM ('PANEL_SET', 'ON_GRID', 'OFF_GRID', 'INSTALLATION');
 
 -- ---------- updated_at trigger ----------
 CREATE OR REPLACE FUNCTION set_updated_at() RETURNS trigger AS $$
@@ -138,15 +140,18 @@ CREATE TABLE products (
 );
 
 -- ---------- package_templates + template_items (BOM) ----------
+-- Ready-made packages (see 03_packages.sql). Picking one copies its complete parts list into
+-- the quote, so nobody has to remember connectors, switches, earthing, stands ...
 CREATE TABLE package_templates (
   id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   name        TEXT         NOT NULL,
+  kind        package_kind NOT NULL,
   capacity_kw NUMERIC(5,2) NOT NULL CHECK (capacity_kw > 0),
-  system_type system_type  NOT NULL,
+  system_type system_type,                 -- ON_GRID / OFF_GRID for systems; NULL for panel set & installation
   description TEXT,
   is_active   BOOLEAN      NOT NULL DEFAULT TRUE,
   created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
-  UNIQUE (capacity_kw, system_type)
+  CONSTRAINT package_templates_kind_capacity_key UNIQUE (kind, capacity_kw)
 );
 
 CREATE TABLE template_items (
@@ -154,6 +159,8 @@ CREATE TABLE template_items (
   template_id BIGINT        NOT NULL REFERENCES package_templates(id) ON DELETE CASCADE,
   product_id  BIGINT        NOT NULL REFERENCES products(id),
   quantity    NUMERIC(10,2) NOT NULL CHECK (quantity > 0),
+  section     TEXT          NOT NULL DEFAULT 'Other',  -- e.g. 'Solar Panels & Wiring', 'Safety & Earthing'
+  sort_order  INT           NOT NULL DEFAULT 0,
   UNIQUE (template_id, product_id)
 );
 
@@ -168,7 +175,9 @@ CREATE TABLE quotes (
   survey_id       BIGINT        REFERENCES surveys(id),
   template_id     BIGINT        REFERENCES package_templates(id),
   status          quote_status  NOT NULL DEFAULT 'DRAFT',
-  system_type     system_type   NOT NULL,
+  package_kind    package_kind,
+  system_type     system_type,                  -- NULL for a panel-set-only quote
+  includes_installation BOOLEAN NOT NULL DEFAULT FALSE,
   capacity_kw     NUMERIC(5,2)  NOT NULL,
   subtotal        NUMERIC(12,2) NOT NULL,
   discount_pct    NUMERIC(5,2)  NOT NULL DEFAULT 0 CHECK (discount_pct BETWEEN 0 AND 100),
@@ -199,6 +208,8 @@ CREATE TABLE quote_items (
   quantity   NUMERIC(10,2)    NOT NULL CHECK (quantity > 0),
   unit_price NUMERIC(12,2)    NOT NULL,
   gst_rate   NUMERIC(5,2)     NOT NULL,
-  line_total NUMERIC(12,2)    NOT NULL        -- quantity * unit_price (before discount & GST)
+  line_total NUMERIC(12,2)    NOT NULL,       -- quantity * unit_price (before discount & GST)
+  section    TEXT,                            -- copied from the template, groups the quote/PDF
+  sort_order INT              NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_quote_items_quote ON quote_items(quote_id);

@@ -1,6 +1,7 @@
 const leadsService = require('../services/leads.service');
 const { ok, created } = require('../utils/response');
 const { ALL_STATUSES } = require('../utils/leadStatus');
+const { scopedAssignee, isScopedStaff } = require('../utils/access');
 const AppError = require('../utils/AppError');
 const { parseLeadInput, toNumber, toId, oneOf, optionalText, requireFields, isBlank } = require('../utils/validate');
 
@@ -30,13 +31,15 @@ async function list(req, res) {
     if (bad.length) throw AppError.badRequest(`Unknown status: ${bad.join(', ')}`, { field: 'status' });
   }
 
+  const requested = mine === 'true' ? req.user.id : isBlank(assignedTo) ? null : toId(assignedTo, 'assignedTo');
   const data = await leadsService.listLeads({
     statuses,
     q: optionalText(q, 100),
-    assignedTo: mine === 'true' ? req.user.id : isBlank(assignedTo) ? null : toId(assignedTo, 'assignedTo'),
+    assignedTo: scopedAssignee(req.user, requested), // staff: always their own leads, whatever they ask for
     source: oneOf(source, SOURCES, 'source'),
     page: toNumber(page, 'page', { min: 1 }) || 1,
     limit: Math.min(toNumber(limit, 'limit', { min: 1 }) || 20, 100),
+    scopeAssignee: scopedAssignee(req.user, null),
   });
   ok(res, data);
 }
@@ -48,7 +51,9 @@ async function create(req, res) {
     input,
     {
       source: oneOf(req.body.source, SOURCES, 'source') || 'PHONE',
-      assignedTo: isBlank(req.body.assignedTo) ? null : toId(req.body.assignedTo, 'assignedTo'),
+      // only admins choose the owner; staff-created leads are always their own
+      assignedTo:
+        isScopedStaff(req.user) || isBlank(req.body.assignedTo) ? null : toId(req.body.assignedTo, 'assignedTo'),
       force: req.body.force === true,
     },
     req.user,
@@ -58,7 +63,13 @@ async function create(req, res) {
 
 /** GET /api/leads/:id – lead + surveys + quotes + activity timeline. */
 async function detail(req, res) {
-  ok(res, await leadsService.getLeadDetail(toId(req.params.id)));
+  ok(res, await leadsService.getLeadDetail(toId(req.params.id), req.user));
+}
+
+/** PATCH /api/leads/:id/assign  { assignedTo } – admin only */
+async function reassign(req, res) {
+  requireFields(req.body, ['assignedTo']);
+  ok(res, await leadsService.reassignLead(toId(req.params.id), toId(req.body.assignedTo, 'assignedTo'), req.user));
 }
 
 /** PATCH /api/leads/:id/qualify */
@@ -87,4 +98,4 @@ async function lost(req, res) {
   ok(res, await leadsService.markLost(toId(req.params.id), optionalText(req.body.reason, 500), req.user));
 }
 
-module.exports = { createEnquiry, list, create, detail, qualify, lost };
+module.exports = { createEnquiry, list, create, detail, qualify, lost, reassign };

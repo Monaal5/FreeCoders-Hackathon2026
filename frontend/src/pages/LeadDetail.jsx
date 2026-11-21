@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { apiClient } from '../api/client';
+import { apiClient, isMockMode } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import StatusBadge from '../components/StatusBadge';
 import ActivityTimeline from '../components/ActivityTimeline';
@@ -68,6 +68,33 @@ export default function LeadDetail() {
 
   const [lostReason, setLostReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Admin-only: reassign the lead to another staff member (Live mode)
+  const isAdmin = user?.role === 'ADMIN';
+  const [staffList, setStaffList] = useState([]);
+  const [reassignTo, setReassignTo] = useState('');
+
+  useEffect(() => {
+    if (!isAdmin || isMockMode()) return;
+    apiClient
+      .get('/api/users', { params: { role: 'STAFF' } })
+      .then((res) => setStaffList(res.data || []))
+      .catch(() => setStaffList([]));
+  }, [isAdmin]);
+
+  const handleReassign = async () => {
+    if (!reassignTo) return;
+    setActionLoading(true);
+    try {
+      await apiClient.patch(`/api/leads/${id}/assign`, { assigned_to: Number(reassignTo) });
+      setReassignTo('');
+      fetchLead();
+    } catch (err) {
+      alert(err.response?.data?.error?.message || 'Failed to reassign lead');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const fetchLead = async () => {
     setLoading(true);
@@ -427,6 +454,33 @@ export default function LeadDetail() {
                   <div className="font-medium text-slate-800">
                     {lead.assigned_to_name || 'Staff Member'}
                   </div>
+                  {isAdmin && staffList.length > 0 && (
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <select
+                        value={reassignTo}
+                        onChange={(e) => setReassignTo(e.target.value)}
+                        className="px-2 py-1 rounded-lg border border-slate-200 text-xs"
+                        aria-label="Reassign lead to"
+                      >
+                        <option value="">Reassign to…</option>
+                        {staffList
+                          .filter((s) => s.id !== lead.assigned_to)
+                          .map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name} ({s.open_leads ?? 0} open)
+                            </option>
+                          ))}
+                      </select>
+                      <button
+                        type="button"
+                        disabled={!reassignTo || actionLoading}
+                        onClick={handleReassign}
+                        className="px-2.5 py-1 rounded-lg bg-slate-900 text-white text-xs font-semibold disabled:opacity-40"
+                      >
+                        Reassign
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
