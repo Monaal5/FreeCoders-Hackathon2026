@@ -22,12 +22,12 @@ async function create(req, res) {
 
 /** GET /api/quotes/:id */
 async function detail(req, res) {
-  ok(res, await quotesService.getQuote(toId(req.params.id)));
+  ok(res, await quotesService.getQuote(toId(req.params.id), req.user));
 }
 
 /** GET /api/quotes/:id/pdf  (?download=1 to force a file download instead of inline view) */
 async function pdf(req, res) {
-  const quote = await quotesService.getQuote(toId(req.params.id));
+  const quote = await quotesService.getQuote(toId(req.params.id), req.user);
   const disposition = req.query.download ? 'attachment' : 'inline';
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `${disposition}; filename="${quote.quote_number}.pdf"`);

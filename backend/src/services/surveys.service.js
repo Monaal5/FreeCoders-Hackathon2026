@@ -1,10 +1,12 @@
 const { query, withTransaction } = require('../config/db');
 const AppError = require('../utils/AppError');
 const { LEAD_STATUS, transitionLead } = require('../utils/leadStatus');
+const { assertLeadAccess } = require('../utils/access');
 
 /** QUALIFIED -> SURVEY_SCHEDULED: assign a technician + date. */
 async function assignSurvey(leadId, { technicianId, scheduledDate, notes }, actor) {
   return withTransaction(async (client) => {
+    await assertLeadAccess(client, leadId, actor, { lock: true }); // staff: own leads only
     const tech = await client.query(
       `SELECT id, name FROM users WHERE id = $1 AND role = 'TECHNICIAN' AND is_active`,
       [technicianId],

@@ -2,6 +2,7 @@ const { query, withTransaction } = require('../config/db');
 const AppError = require('../utils/AppError');
 const { LEAD_STATUS, OPEN_STATUSES, transitionLead } = require('../utils/leadStatus');
 const { suggestKw } = require('../utils/sizing');
+const { assertLeadAccess, canAccessLead } = require('../utils/access');
 
 // Arbitrary constant for pg_advisory_xact_lock: serialises auto-assignment so two
 // simultaneous enquiries cannot both pick the same "least busy" staff member.
@@ -25,7 +26,7 @@ async function pickLeastBusyStaff(client) {
 
 async function findOpenLeadByPhone(client, phone) {
   const { rows } = await client.query(
-    `SELECT id, lead_code, status FROM leads
+    `SELECT id, lead_code, status, assigned_to FROM leads
       WHERE phone = $1 AND status = ANY($2::lead_status[])
       ORDER BY created_at DESC LIMIT 1`,
     [phone, OPEN_STATUSES],
@@ -85,11 +86,18 @@ async function createManualLead(input, { source, assignedTo, force }, actor) {
     if (!force) {
       const existing = await findOpenLeadByPhone(client, input.phone);
       if (existing) {
-        throw AppError.conflict(`An open lead (${existing.lead_code}) already exists for this phone`, 'DUPLICATE_LEAD', {
-          existingLeadId: existing.id,
-          leadCode: existing.lead_code,
-          hint: 'Send "force": true to create anyway',
-        });
+        // Only reveal which lead it is if the caller is allowed to open it
+        if (canAccessLead(actor, existing)) {
+          throw AppError.conflict(`An open lead (${existing.lead_code}) already exists for this phone`, 'DUPLICATE_LEAD', {
+            existingLeadId: existing.id,
+            leadCode: existing.lead_code,
+            hint: 'Send "force": true to create anyway',
+          });
+        }
+        throw AppError.conflict(
+          'This customer is already being handled by another team member. Ask an admin to reassign the lead.',
+          'DUPLICATE_LEAD',
+        );
       }
     }
 
@@ -115,7 +123,7 @@ async function createManualLead(input, { source, assignedTo, force }, actor) {
 }
 
 /** Inbox list with filters, search and pagination + per-status counts for the tabs. */
-async function listLeads({ statuses, q, assignedTo, source, page, limit }) {
+async function listLeads({ statuses, q, assignedTo, source, page, limit, scopeAssignee = null }) {
   const search = q ? `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null; // escape LIKE wildcards
   const offset = (page - 1) * limit;
 
@@ -136,7 +144,12 @@ async function listLeads({ statuses, q, assignedTo, source, page, limit }) {
         LIMIT $5 OFFSET $6`,
       [statuses, search, assignedTo, source, limit, offset],
     ),
-    query(`SELECT status, count(*)::int AS count FROM leads GROUP BY status`),
+    query(
+      `SELECT status, count(*)::int AS count FROM leads
+        WHERE ($1::bigint IS NULL OR assigned_to = $1)
+        GROUP BY status`,
+      [scopeAssignee],
+    ),
   ]);
 
   const total = list.rows[0]?.total_count ?? 0;
@@ -147,7 +160,8 @@ async function listLeads({ statuses, q, assignedTo, source, page, limit }) {
   };
 }
 
-async function getLeadDetail(id) {
+async function getLeadDetail(id, user) {
+  await assertLeadAccess({ query }, id, user); // 404 if missing or not this staff member's lead
   const [lead, surveys, quotes, activities] = await Promise.all([
     query(
       `SELECT l.*, u.name AS assigned_to_name, c.name AS created_by_name
@@ -189,6 +203,7 @@ async function getLeadDetail(id) {
 /** NEW -> QUALIFIED. Stores qualification answers (JSONB) and the suggested system size. */
 async function qualifyLead(id, input, actor) {
   return withTransaction(async (client) => {
+    await assertLeadAccess(client, id, actor, { lock: true });
     const sizing = suggestKw(input);
     const suggested = input.suggestedKw ?? sizing.suggestedKw;
     const qualification = { ...stripNulls(input), sizingBasis: sizing.basis, qualifiedAt: new Date().toISOString() };
@@ -214,6 +229,7 @@ async function qualifyLead(id, input, actor) {
 /** any open status -> LOST. Also closes any open survey and pending quotes for the lead. */
 async function markLost(id, reason, actor) {
   return withTransaction(async (client) => {
+    await assertLeadAccess(client, id, actor, { lock: true });
     await transitionLead(client, id, LEAD_STATUS.LOST, actor.id, `Marked lost: ${reason}`);
     await client.query(
       `UPDATE surveys SET status = 'REJECTED', review_note = 'Lead marked lost', reviewed_by = $2, reviewed_at = now()
@@ -229,6 +245,31 @@ async function markLost(id, reason, actor) {
   });
 }
 
+/** Admin only: move a lead to another active staff/admin user, with a timeline entry. */
+async function reassignLead(id, assigneeId, admin) {
+  return withTransaction(async (client) => {
+    const lead = await assertLeadAccess(client, id, admin, { lock: true });
+    const target = await client.query(
+      `SELECT id, name FROM users WHERE id = $1 AND is_active AND role IN ('STAFF', 'ADMIN')`,
+      [assigneeId],
+    );
+    if (!target.rows.length) throw AppError.badRequest('assignedTo must be an active staff/admin user', { field: 'assignedTo' });
+    if (Number(lead.assigned_to) === Number(assigneeId)) {
+      throw AppError.conflict(`Lead is already assigned to ${target.rows[0].name}`, 'ALREADY_ASSIGNED');
+    }
+
+    const prev = lead.assigned_to
+      ? (await client.query('SELECT name FROM users WHERE id = $1', [lead.assigned_to])).rows[0]?.name
+      : null;
+    const { rows } = await client.query('UPDATE leads SET assigned_to = $2 WHERE id = $1 RETURNING *', [id, assigneeId]);
+    await logActivity(
+      client, id, admin.id, 'ASSIGNED',
+      `Reassigned ${prev ? `from ${prev} ` : ''}to ${target.rows[0].name}`,
+    );
+    return { ...rows[0], assigned_to_name: target.rows[0].name };
+  });
+}
+
 const stripNulls = (obj) => Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== null && v !== undefined));
 
-module.exports = { createEnquiry, createManualLead, listLeads, getLeadDetail, qualifyLead, markLost };
+module.exports = { createEnquiry, createManualLead, listLeads, getLeadDetail, qualifyLead, markLost, reassignLead };

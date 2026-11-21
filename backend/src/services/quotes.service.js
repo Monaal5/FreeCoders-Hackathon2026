@@ -2,6 +2,7 @@ const { query, withTransaction } = require('../config/db');
 const AppError = require('../utils/AppError');
 const { LEAD_STATUS, transitionLead, assertStatus } = require('../utils/leadStatus');
 const { round2 } = require('../utils/money');
+const { assertLeadAccess, canAccessLead } = require('../utils/access');
 
 const QUOTE_TRANSITIONS = Object.freeze({
   DRAFT: ['SENT', 'ACCEPTED', 'REJECTED'],
@@ -32,9 +33,7 @@ function calculateTotals(items, discountPct = 0) {
  */
 async function createQuote(leadId, { templateId, discountPct, notes, validDays }, actor) {
   return withTransaction(async (client) => {
-    const leadRes = await client.query('SELECT id, status, customer_name FROM leads WHERE id = $1 FOR UPDATE', [leadId]);
-    if (!leadRes.rows.length) throw AppError.notFound('Lead');
-    const lead = leadRes.rows[0];
+    const lead = await assertLeadAccess(client, leadId, actor, { lock: true }); // 404 if not this staff's lead
     assertStatus(lead, [LEAD_STATUS.SURVEY_APPROVED, LEAD_STATUS.QUOTED], 'create a quote');
 
     const surveyRes = await client.query(
@@ -104,10 +103,10 @@ async function createQuote(leadId, { templateId, discountPct, notes, validDays }
   });
 }
 
-async function getQuote(id) {
+async function getQuote(id, user) {
   const [quoteRes, itemsRes] = await Promise.all([
     query(
-      `SELECT q.*, t.name AS template_name, u.name AS created_by_name, u.phone AS created_by_phone,
+      `SELECT q.*, l.assigned_to, t.name AS template_name, u.name AS created_by_name, u.phone AS created_by_phone,
               l.lead_code, l.customer_name, l.phone AS customer_phone, l.email AS customer_email,
               l.address AS customer_address, l.city AS customer_city, l.state AS customer_state,
               l.pincode AS customer_pincode,
@@ -125,7 +124,8 @@ async function getQuote(id) {
       [id, CATEGORY_ORDER],
     ),
   ]);
-  if (!quoteRes.rows.length) throw AppError.notFound('Quote');
+  // staff may only open quotes of their own leads – anything else looks like it doesn't exist
+  if (!quoteRes.rows.length || !canAccessLead(user, quoteRes.rows[0])) throw AppError.notFound('Quote');
   return { ...quoteRes.rows[0], items: itemsRes.rows };
 }
 
@@ -138,6 +138,11 @@ async function updateQuoteStatus(id, toStatus, actor) {
     const { rows } = await client.query('SELECT * FROM quotes WHERE id = $1 FOR UPDATE', [id]);
     if (!rows.length) throw AppError.notFound('Quote');
     const quote = rows[0];
+    try {
+      await assertLeadAccess(client, quote.lead_id, actor);
+    } catch {
+      throw AppError.notFound('Quote'); // same answer as a missing quote
+    }
 
     if (!QUOTE_TRANSITIONS[quote.status].includes(toStatus)) {
       throw AppError.conflict(`Cannot move quote from ${quote.status} to ${toStatus}`, 'INVALID_STATUS_TRANSITION', {

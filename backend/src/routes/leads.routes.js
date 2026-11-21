@@ -14,6 +14,7 @@ router.post('/', leads.create);
 router.get('/:id', leads.detail);
 router.patch('/:id/qualify', leads.qualify);
 router.patch('/:id/lost', leads.lost);
+router.patch('/:id/assign', authorize(ROLES.ADMIN), leads.reassign);
 
 router.post('/:id/surveys', surveys.assign);
 router.post('/:id/quotes', quotes.create);

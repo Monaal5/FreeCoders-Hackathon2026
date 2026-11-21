@@ -23,8 +23,15 @@ async function api(method, url, { token, body, form } = {}) {
   const login = async (email) => (await api('POST', '/auth/login', { body: { email, password: 'password123' } })).json.data.token;
   const bad = await api('POST', '/auth/login', { body: { email: 'admin@sunpower.com', password: 'nope' } });
   check('bad login 401', bad.status === 401 && bad.json.success === false, bad.json);
-  const admin = await login('admin@sunpower.com'), staff = await login('staff@sunpower.com'), tech = await login('tech@sunpower.com');
-  check('logins', admin && staff && tech);
+  const admin = await login('admin@sunpower.com'), tech = await login('tech@sunpower.com');
+  const staffA = await login('staff@sunpower.com'), staffB = await login('staff2@sunpower.com');
+  check('logins', admin && staffA && staffB && tech);
+  // staff can only act on their OWN leads, so map user id -> token to act as the owner
+  const staffUsers = (await api('GET', '/users?role=STAFF', { token: admin })).json.data;
+  const tokenById = Object.fromEntries(staffUsers.map((u) => [u.id, u.email === 'staff@sunpower.com' ? staffA : staffB]));
+  const ownerToken = (lead) => tokenById[lead.assignedTo];
+  const otherToken = (lead) => (ownerToken(lead) === staffA ? staffB : staffA);
+  let staff = staffA; // re-pointed at the test lead's owner below
 
   const enq = await api('POST', '/public/enquiries', { body: { customerName: 'Test Customer', phone: '+91 91234 56789', city: 'Pune', monthlyBill: 3000, pincode: '411001' } });
   check('enquiry 201', enq.status === 201, enq.json);
@@ -33,10 +40,22 @@ async function api(method, url, { token, body, form } = {}) {
   const badEnq = await api('POST', '/public/enquiries', { body: { customerName: 'X', phone: '123' } });
   check('invalid phone 400', badEnq.status === 400, badEnq.json);
 
-  const list = await api('GET', `/leads?q=${enq.json.data.leadCode}`, { token: staff });
+  const list = await api('GET', `/leads?q=${enq.json.data.leadCode}`, { token: admin });
   const lead = list.json.data.items[0];
-  check('search finds lead', list.json.data.items.length === 1 && lead.assignedToName, list.json);
+  check('search finds lead (admin)', list.json.data.items.length === 1 && lead.assignedToName, list.json);
   check('counts present', list.json.data.counts.NEW >= 1);
+  staff = ownerToken(lead);
+  const other = otherToken(lead);
+  const ownList = await api('GET', `/leads?q=${enq.json.data.leadCode}`, { token: staff });
+  check('owner staff finds own lead', ownList.json.data.items.length === 1, ownList.json);
+  const otherList = await api('GET', `/leads?q=${enq.json.data.leadCode}`, { token: other });
+  check('other staff cannot list it', otherList.json.data.items.length === 0, otherList.json);
+  const otherAll = await api('GET', '/leads?assignedTo=' + lead.assignedTo, { token: other });
+  check('other staff assignedTo filter ignored', otherAll.json.data.items.every((l) => l.assignedTo !== lead.assignedTo), otherAll.json);
+  const otherDet = await api('GET', `/leads/${lead.id}`, { token: other });
+  check('other staff detail 404', otherDet.status === 404, otherDet.json);
+  const otherQualify = await api('PATCH', `/leads/${lead.id}/qualify`, { token: other, body: { monthlyBill: 3000 } });
+  check('other staff qualify 404', otherQualify.status === 404, otherQualify.json);
   const techLeads = await api('GET', '/leads', { token: tech });
   check('technician blocked 403', techLeads.status === 403);
   const noAuth = await api('GET', '/leads');
@@ -53,6 +72,8 @@ async function api(method, url, { token, body, form } = {}) {
   const techs = await api('GET', '/users?role=TECHNICIAN', { token: staff });
   check('technicians list', techs.json.data.length === 1, techs.json);
   const today = new Date().toISOString().slice(0, 10);
+  const otherSv = await api('POST', `/leads/${lead.id}/surveys`, { token: other, body: { technicianId: techs.json.data[0].id, scheduledDate: today } });
+  check('other staff assign survey 404', otherSv.status === 404, otherSv.json);
   const sv = await api('POST', `/leads/${lead.id}/surveys`, { token: staff, body: { technicianId: techs.json.data[0].id, scheduledDate: today } });
   check('assign survey', sv.status === 201 && sv.json.data.status === 'SCHEDULED', sv.json);
 
@@ -81,6 +102,8 @@ async function api(method, url, { token, body, form } = {}) {
 
   const tpl = await api('GET', '/templates?systemType=ON_GRID&capacityKw=3', { token: staff });
   check('template lookup', tpl.json.data.length === 1 && tpl.json.data[0].items.length === 10, tpl.json);
+  const otherQt = await api('POST', `/leads/${lead.id}/quotes`, { token: other, body: { templateId: tpl.json.data[0].id } });
+  check('other staff create quote 404', otherQt.status === 404, otherQt.json);
   const qt = await api('POST', `/leads/${lead.id}/quotes`, { token: staff, body: { templateId: tpl.json.data[0].id, discountPct: 5 } });
   const d = qt.json?.data;
   check('create quote', qt.status === 201 && d.items.length === 10 && d.quoteNumber, qt.json);
@@ -92,6 +115,14 @@ async function api(method, url, { token, body, form } = {}) {
   const pdf = await api('GET', `/quotes/${d.id}/pdf`, { token: staff });
   check('pdf', pdf.status === 200 && pdf.buf && pdf.buf.subarray(0, 4).toString() === '%PDF', pdf.status);
   if (pdf.buf) { const out = path.join(__dirname, '..', 'uploads', 'smoke-test-quote.pdf'); fs.writeFileSync(out, pdf.buf); console.log('   PDF saved to', out); }
+
+  const otherGetQ = await api('GET', `/quotes/${d.id}`, { token: other });
+  const otherPdf = await api('GET', `/quotes/${d.id}/pdf`, { token: other });
+  const otherStatus = await api('PATCH', `/quotes/${d.id}/status`, { token: other, body: { status: 'ACCEPTED' } });
+  check('other staff quote/pdf/status 404', otherGetQ.status === 404 && otherPdf.status === 404 && otherStatus.status === 404,
+    [otherGetQ.status, otherPdf.status, otherStatus.status]);
+  const adminGetQ = await api('GET', `/quotes/${d.id}`, { token: admin });
+  check('admin can open any quote', adminGetQ.status === 200);
 
   const badMove = await api('PATCH', `/quotes/${d.id}/status`, { token: staff, body: { status: 'DRAFT' } });
   check('invalid quote status 400', badMove.status === 400);
@@ -112,10 +143,32 @@ async function api(method, url, { token, body, form } = {}) {
   const rej = await api('PATCH', `/surveys/${seededDet.surveys[0].id}/review`, { token: admin, body: { decision: 'REJECT', note: 'Need meter photo' } });
   const afterRej = (await api('GET', `/leads/${seeded.id}`, { token: admin })).json.data.status;
   check('reject -> QUALIFIED', rej.status === 200 && afterRej === 'QUALIFIED', afterRej);
-  const lost = await api('PATCH', `/leads/${seeded.id}/lost`, { token: staff, body: { reason: 'Went with competitor' } });
+  const otherLost = await api('PATCH', `/leads/${seeded.id}/lost`, { token: otherToken(seeded), body: { reason: 'x' } });
+  check('other staff mark lost 404', otherLost.status === 404, otherLost.json);
+  const lost = await api('PATCH', `/leads/${seeded.id}/lost`, { token: ownerToken(seeded), body: { reason: 'Went with competitor' } });
   check('mark lost', lost.json.data?.status === 'LOST' && lost.json.data.lostReason, lost.json);
-  const lost2 = await api('PATCH', `/leads/${seeded.id}/lost`, { token: staff, body: { reason: 'x' } });
+  const lost2 = await api('PATCH', `/leads/${seeded.id}/lost`, { token: ownerToken(seeded), body: { reason: 'x' } });
   check('lost is final 409', lost2.status === 409);
+
+  // admin reassignment: ownership moves, timeline records it
+  const staffReassign = await api('PATCH', `/leads/${lead.id}/assign`, { token: staff, body: { assignedTo: lead.assignedTo } });
+  check('staff cannot reassign 403', staffReassign.status === 403);
+  const otherId = Number(Object.keys(tokenById).find((id) => Number(id) !== lead.assignedTo));
+  const re = await api('PATCH', `/leads/${lead.id}/assign`, { token: admin, body: { assignedTo: otherId } });
+  check('admin reassigns lead', re.status === 200 && re.json.data.assignedTo === otherId, re.json);
+  const reSame = await api('PATCH', `/leads/${lead.id}/assign`, { token: admin, body: { assignedTo: otherId } });
+  check('reassign to same owner 409', reSame.status === 409);
+  const newOwnerSees = await api('GET', `/leads/${lead.id}`, { token: other });
+  const oldOwnerBlocked = await api('GET', `/leads/${lead.id}`, { token: staff });
+  check('new owner sees, old owner 404', newOwnerSees.status === 200 && oldOwnerBlocked.status === 404,
+    [newOwnerSees.status, oldOwnerBlocked.status]);
+  check('reassign in timeline', newOwnerSees.json.data.activities.some((a) => a.type === 'ASSIGNED' && /Reassigned/.test(a.note)));
+  const mine = await api('GET', '/leads?limit=100', { token: staffA });
+  const myId = Number(Object.keys(tokenById).find((id) => tokenById[id] === staffA));
+  check('staff inbox only own leads', mine.json.data.items.length > 0 && mine.json.data.items.every((l) => l.assignedTo === myId));
+  // seed lead 9876500002 (Amit Verma) belongs to staff2 – staff1 must not learn which lead it is
+  const leak = await api('POST', '/leads', { token: staffA, body: { customerName: 'Dup', phone: '9876500002' } });
+  check('duplicate of colleague lead hides details', leak.status === 409 && !leak.json.error.details, leak.json);
 
   const manual = await api('POST', '/leads', { token: staff, body: { customerName: 'Walk-in', phone: '9000000099', source: 'whatsapp' } });
   check('manual lead self-assigned', manual.status === 201 && manual.json.data.source === 'WHATSAPP', manual.json);
