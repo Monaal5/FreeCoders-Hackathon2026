@@ -2,6 +2,7 @@ import axios from 'axios';
 import { initialUsers, initialLeads, initialPackageTemplates, initialQuotes, initialProducts } from './mockData';
 import { canTransition, LEAD_STATUS } from '../utils/leadStatus';
 import { adaptRequest, adaptResponse } from './liveAdapter';
+import { TOKEN_KEY, getStoredToken, getCurrentUser, makeMockToken } from '../utils/authToken';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -14,9 +15,9 @@ export const api = axios.create({
   timeout: 10000,
 });
 
-// Attach Authorization header if token exists
+// Attach the JWT (it carries the user's id + role; the server verifies it on every call)
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('sunpower_token');
+  const token = getStoredToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -29,7 +30,7 @@ api.interceptors.response.use(
   (err) => {
     const isLogin = err.config?.url?.includes('/auth/login');
     if (err.response?.status === 401 && !isLogin) {
-      localStorage.removeItem('sunpower_token');
+      localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem('sunpower_user');
       if (!window.location.pathname.startsWith('/login')) window.location.assign('/login');
     }
@@ -107,14 +108,14 @@ async function mockRequest(method, url, data = null, params = null) {
   await new Promise((r) => setTimeout(r, 150));
 
   const cleanUrl = url.replace(/^\/api/, '');
-  const currentUser = JSON.parse(localStorage.getItem('sunpower_user') || 'null');
+  const currentUser = getCurrentUser(); // decoded from the token, same as Live mode
 
   // 1. POST /auth/login
   if (cleanUrl === '/auth/login' && method === 'post') {
     const { email, password } = data;
     const user = mockDb.users.find((u) => u.email.toLowerCase() === (email || '').toLowerCase());
     if (user && (password === 'password123' || password === 'admin' || password === 'staff' || password === 'tech')) {
-      const token = `mock_jwt_token_${user.id}_${Date.now()}`;
+      const token = makeMockToken(user); // JWT-shaped, carries the role like the real one
       return {
         success: true,
         data: {

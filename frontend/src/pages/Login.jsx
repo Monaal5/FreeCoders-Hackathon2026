@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Sun, Shield, User, HardHat, AlertCircle, ArrowRight } from 'lucide-react';
+import { Sun, AlertCircle, ArrowRight, KeyRound } from 'lucide-react';
 
 export default function Login() {
-  const [email, setEmail] = useState('admin@sunpower.com');
-  const [password, setPassword] = useState('password123');
+  // No role picker: the role belongs to the account and comes back inside the signed token.
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const { login, loading } = useAuth();
   const navigate = useNavigate();
@@ -26,11 +27,6 @@ export default function Login() {
     } else {
       setError(result.message || 'Invalid credentials');
     }
-  };
-
-  const handleQuickLogin = (roleEmail, defaultPath = '/leads') => {
-    setEmail(roleEmail);
-    setPassword('password123');
   };
 
   return (
@@ -95,53 +91,15 @@ export default function Login() {
           </button>
         </form>
 
-        {/* Demo Role Switcher (Crucial for Hackathon Demo & Judges) */}
-        <div className="pt-6 border-t border-slate-100">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 text-center mb-3">
-            Quick Fill Demo Roles
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              onClick={() => handleQuickLogin('admin@sunpower.com')}
-              className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-medium transition ${
-                email === 'admin@sunpower.com'
-                  ? 'border-amber-500 bg-amber-50 text-amber-900 font-bold'
-                  : 'border-slate-200 hover:bg-slate-50 text-slate-700'
-              }`}
-            >
-              <Shield className="w-4 h-4 text-purple-600 mb-1" />
-              <span>Admin</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleQuickLogin('staff@sunpower.com')}
-              className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-medium transition ${
-                email === 'staff@sunpower.com'
-                  ? 'border-amber-500 bg-amber-50 text-amber-900 font-bold'
-                  : 'border-slate-200 hover:bg-slate-50 text-slate-700'
-              }`}
-            >
-              <User className="w-4 h-4 text-amber-600 mb-1" />
-              <span>Sales Staff</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleQuickLogin('tech@sunpower.com')}
-              className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-medium transition ${
-                email === 'tech@sunpower.com'
-                  ? 'border-amber-500 bg-amber-50 text-amber-900 font-bold'
-                  : 'border-slate-200 hover:bg-slate-50 text-slate-700'
-              }`}
-            >
-              <HardHat className="w-4 h-4 text-indigo-600 mb-1" />
-              <span>Technician</span>
-            </button>
-          </div>
-          <p className="mt-2 text-[11px] text-center text-slate-400">
-            Password: <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-600">password123</code>
+        {/* No role buttons: sign in with your own account; the role is read from the signed token */}
+        <div className="pt-6 border-t border-slate-100 flex gap-3 text-xs text-slate-500">
+          <KeyRound className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+          <p>
+            Your role (Admin, Staff or Technician) comes from your account. You land on the right screens
+            automatically after signing in.
+            <span className="block mt-1 text-slate-400">
+              Demo accounts: admin@, staff@, tech@sunpower.com · password123
+            </span>
           </p>
         </div>
       </div>

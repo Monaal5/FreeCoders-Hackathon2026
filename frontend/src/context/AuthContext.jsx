@@ -1,35 +1,85 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { apiClient, setMockMode, isMockMode, mockDb } from '../api/client';
+import { TOKEN_KEY, getStoredToken, userFromToken } from '../utils/authToken';
 
 const AuthContext = createContext(null);
 
+const saveToken = (t) => {
+  try {
+    if (t) localStorage.setItem(TOKEN_KEY, t);
+    else localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem('sunpower_user'); // old separate role copy – no longer used
+  } catch {
+    /* storage blocked: session lasts until reload */
+  }
+};
+
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('sunpower_user');
-    return saved ? JSON.parse(saved) : null;
+  // Only the token is stored. Who the user is – and their ROLE – is read from inside it.
+  const [token, setToken] = useState(() => {
+    const t = getStoredToken();
+    if (t && !userFromToken(t)) {
+      saveToken(null); // expired or malformed token from an earlier visit
+      return null;
+    }
+    return t;
   });
-  const [token, setToken] = useState(() => localStorage.getItem('sunpower_token'));
+  const user = useMemo(() => userFromToken(token), [token]);
   const [useMock, setUseMockState] = useState(isMockMode());
   const [loading, setLoading] = useState(false);
 
+  const logout = useCallback(() => {
+    saveToken(null);
+    setToken(null);
+  }, []);
+
   useEffect(() => {
-    const handleModeChange = () => {
-      setUseMockState(isMockMode());
-    };
+    const handleModeChange = () => setUseMockState(isMockMode());
     window.addEventListener('sunpower_mode_changed', handleModeChange);
     return () => window.removeEventListener('sunpower_mode_changed', handleModeChange);
   }, []);
+
+  // Sign out automatically the moment the token expires.
+  useEffect(() => {
+    if (!user?.expiresAt) return undefined;
+    const ms = user.expiresAt - Date.now();
+    if (ms <= 0) {
+      logout();
+      return undefined;
+    }
+    const id = setTimeout(logout, Math.min(ms, 2 ** 31 - 1));
+    return () => clearTimeout(id);
+  }, [user?.expiresAt, logout]);
+
+  // Reopened app (Live mode): ask the server whether the token is still valid and the role unchanged.
+  useEffect(() => {
+    if (!token || isMockMode()) return;
+    let cancelled = false;
+    apiClient
+      .get('/api/auth/me')
+      .then((res) => {
+        const serverRole = res?.data?.role?.toUpperCase();
+        if (!cancelled && serverRole && serverRole !== user?.role) logout(); // role changed since login
+      })
+      .catch(() => {
+        /* 401 is handled by the API client (clears the token, goes to /login) */
+      });
+    return () => {
+      cancelled = true;
+    };
+    // run once per token, not on every render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const login = async (email, password) => {
     setLoading(true);
     try {
       const res = await apiClient.post('/api/auth/login', { email, password });
-      if (res.success && res.data) {
-        const { token: authToken, user: authUser } = res.data;
-        setUser(authUser);
+      const authToken = res?.data?.token;
+      const authUser = userFromToken(authToken);
+      if (res.success && authUser) {
+        saveToken(authToken);
         setToken(authToken);
-        localStorage.setItem('sunpower_token', authToken);
-        localStorage.setItem('sunpower_user', JSON.stringify(authUser));
         return { success: true, user: authUser };
       }
       return { success: false, message: 'Invalid response from server' };
@@ -41,17 +91,11 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const logout = () => {
-    setUser(null);
-    setToken(null);
-    localStorage.removeItem('sunpower_token');
-    localStorage.removeItem('sunpower_user');
-  };
-
   const toggleMockMode = () => {
     const next = !useMock;
     setMockMode(next);
     setUseMockState(next);
+    logout(); // a token from one mode is not valid in the other
   };
 
   const resetMockData = () => {
@@ -59,10 +103,7 @@ export function AuthProvider({ children }) {
     window.location.reload();
   };
 
-  const hasRole = (...roles) => {
-    if (!user) return false;
-    return roles.map(r => r.toUpperCase()).includes(user.role?.toUpperCase());
-  };
+  const hasRole = (...roles) => !!user && roles.map((r) => r.toUpperCase()).includes(user.role);
 
   return (
     <AuthContext.Provider
@@ -71,7 +112,7 @@ export function AuthProvider({ children }) {
         token,
         loading,
         useMock,
-        isAuthenticated: !!user && !!token,
+        isAuthenticated: !!user,
         hasRole,
         login,
         logout,
