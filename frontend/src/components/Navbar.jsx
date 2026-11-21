@@ -85,6 +85,10 @@ export default function Navbar() {
 
                 {user.role === 'TECHNICIAN' && (
                   <>
+                    <Link to="/today" className={navItemClass('/today')}>
+                      <Sun className="w-4 h-4 text-amber-500" />
+                      <span>Today</span>
+                    </Link>
                     <Link to="/surveys" className={navItemClass('/surveys')}>
                       <HardHat className="w-4 h-4 text-indigo-600" />
                       <span>My Tasks & To-Do</span>

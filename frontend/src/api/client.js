@@ -127,6 +127,14 @@ class MockDatabase {
 
 export const mockDb = new MockDatabase();
 
+const MOCK_CHECKLIST = [
+  ['STANDS_MOUNTED', 'Stands mounted'],
+  ['PANELS_LAID', 'Panels laid'],
+  ['WIRING_BOXES_CONNECTED', 'Wiring boxes (ACDB/DCDB) connected'],
+  ['EARTHING_DONE', 'Earthing done'],
+  ['GENERATION_TESTED', 'Generation tested'],
+];
+
 // Mock Dispatcher implementing the full frozen contract
 async function mockRequest(method, url, data = null, params = null) {
   // Simulate network latency (150ms)
@@ -1181,16 +1189,174 @@ async function mockRequest(method, url, data = null, params = null) {
     return { success: true, data: job };
   }
 
-  // 31. POST /jobs/:id/complete
+  // ---------- Phase 3: on-site installation (mirrors backend installation.service) ----------
+  const jobErr = (status, code, message, details) => ({
+    response: { status, data: { success: false, message, code, error: { code, message, details } } },
+  });
+  const findJob = (id) => {
+    const job = (mockDb.jobs || []).find((j) => j.id === Number(id));
+    if (!job) throw jobErr(404, 'NOT_FOUND', 'Job not found');
+    if (currentUser?.role === 'TECHNICIAN' && Number(job.crew_lead_id) !== Number(currentUser.id)
+        && !(job.crew_ids || []).includes(Number(currentUser.id))) throw jobErr(404, 'NOT_FOUND', 'Job not found');
+    return job;
+  };
+  const mockJobView = (job) => {
+    const order = (mockDb.orders || []).find((o) => o.id === job.order_id) || {};
+    const lead = order.lead || {};
+    const verified = job.verified_serials || [];
+    const fromInventory = (mockDb.serials || []).filter((s) => s.order_id === job.order_id);
+    const source = fromInventory.length ? fromInventory : order.scanned_serials?.length ? order.scanned_serials : order.warranties || [];
+    const serials = source.map((s) => ({
+      serial_number: s.serial_number,
+      name: s.product_name || s.name,
+      category: s.category,
+      verified: verified.includes(s.serial_number),
+    }));
+    const checklist = job.checklist || {};
+    const photos = job.photos || [];
+    const isLead = Number(job.crew_lead_id) === Number(currentUser?.id);
+    return {
+      ...job,
+      customer_name: job.customer_name || lead.customer_name,
+      phone: job.phone || lead.phone,
+      address: lead.address,
+      city: job.city || lead.city,
+      pincode: lead.pincode,
+      lead: { ...lead, customer_name: job.customer_name || lead.customer_name },
+      order: { id: order.id, order_number: order.order_number, status: order.status },
+      order_status: order.status,
+      maps_url: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([lead.address, lead.city, lead.pincode].filter(Boolean).join(', '))}`,
+      crew: job.crew || [{ id: job.crew_lead_id, name: job.crew_lead_name, is_lead: true }],
+      is_lead: isLead,
+      you: { is_lead: isLead, is_crew: true, can_start: currentUser?.role === 'ADMIN' || isLead },
+      checklist_items: MOCK_CHECKLIST.map(([key, label]) => ({ key, label, done: !!checklist[key] })),
+      serials,
+      serials_progress: {
+        expected: serials.length,
+        verified: serials.filter((s) => s.verified).length,
+        missing: serials.filter((s) => !s.verified).map((s) => s.serial_number),
+      },
+      serials_expected: serials.length,
+      serials_verified: serials.filter((s) => s.verified).length,
+      photos,
+      after_photos: photos.filter((p) => p.stage === 'AFTER').length,
+      min_after_photos: 2,
+      signature_url: job.signature_data || null,
+      signature_integrity: job.status === 'COMPLETED' ? { valid: true } : null,
+      certificate_url: job.status === 'COMPLETED' ? 'mock' : null,
+    };
+  };
+
+  // 31a. GET /jobs/my (technician's jobs)
+  if (cleanUrl === '/jobs/my' && method === 'get') {
+    const mine = (mockDb.jobs || []).filter((j) => j.status !== 'COMPLETED' && (Number(j.crew_lead_id) === Number(currentUser?.id)
+      || (j.crew_ids || []).includes(Number(currentUser?.id))));
+    return { success: true, data: mine.map(mockJobView) };
+  }
+
+  // 31b. GET /jobs/:id (detail)
+  const jobDetailMatch = cleanUrl.match(/^\/jobs\/(\d+)$/);
+  if (jobDetailMatch && method === 'get') {
+    return { success: true, data: mockJobView(findJob(jobDetailMatch[1])) };
+  }
+
+  // 31c. POST /jobs/:id/start
+  const jobStartMatch = cleanUrl.match(/^\/jobs\/(\d+)\/start$/);
+  if (jobStartMatch && method === 'post') {
+    const job = findJob(jobStartMatch[1]);
+    const view = mockJobView(job);
+    if (!view.you.can_start) throw jobErr(403, 'FORBIDDEN', 'Only the crew lead or an admin can start the job');
+    if (job.status === 'COMPLETED') throw jobErr(409, 'JOB_ALREADY_COMPLETED', 'Job is already completed');
+    if (job.status === 'IN_PROGRESS') throw jobErr(409, 'JOB_ALREADY_STARTED', 'Job was already started');
+    if (!['DELIVERED', 'INSTALLED'].includes(view.order_status)) {
+      throw jobErr(409, 'ORDER_NOT_DELIVERED', `Order ${view.order?.order_number} is ${view.order_status}; materials must be DELIVERED before starting`);
+    }
+    job.status = 'IN_PROGRESS';
+    job.started_at = new Date().toISOString();
+    mockDb.save();
+    return { success: true, data: { id: job.id, status: job.status, started_at: job.started_at } };
+  }
+
+  // 31d. PATCH /jobs/:id/checklist
+  const jobChecklistMatch = cleanUrl.match(/^\/jobs\/(\d+)\/checklist$/);
+  if (jobChecklistMatch && method === 'patch') {
+    const job = findJob(jobChecklistMatch[1]);
+    if (job.status !== 'IN_PROGRESS') throw jobErr(409, 'JOB_NOT_IN_PROGRESS', 'Start the job before ticking the checklist');
+    job.checklist = { ...(job.checklist || {}), ...(data?.checklist || data || {}) };
+    mockDb.save();
+    return { success: true, data: { id: job.id, checklist: job.checklist } };
+  }
+
+  // 31e. POST /jobs/:id/photos (FormData: stage + photos[]; object URLs, not kept across reloads)
+  const jobPhotosMatch = cleanUrl.match(/^\/jobs\/(\d+)\/photos$/);
+  if (jobPhotosMatch && method === 'post') {
+    const job = findJob(jobPhotosMatch[1]);
+    if (job.status !== 'IN_PROGRESS') throw jobErr(409, 'JOB_NOT_IN_PROGRESS', 'Start the job before adding photos');
+    const stage = data?.get?.('stage');
+    const files = data?.getAll?.('photos') || [];
+    if (!['BEFORE', 'DURING', 'AFTER'].includes(stage)) throw jobErr(400, 'VALIDATION_ERROR', 'stage is required');
+    if (!files.length) throw jobErr(400, 'VALIDATION_ERROR', 'Add at least one photo');
+    job.photos = job.photos || [];
+    const added = files.map((f, i) => ({
+      id: Date.now() + i,
+      stage,
+      url: URL.createObjectURL(f),
+      path: f.name,
+      uploaded_at: new Date().toISOString(),
+      uploaded_by_name: currentUser?.name,
+    }));
+    job.photos.push(...added);
+    mockDb.save();
+    return { success: true, data: { added, min_after_photos: 2 } };
+  }
+
+  // 31f. POST /jobs/:id/serials/verify
+  const jobVerifyMatch = cleanUrl.match(/^\/jobs\/(\d+)\/serials\/verify$/);
+  if (jobVerifyMatch && method === 'post') {
+    const job = findJob(jobVerifyMatch[1]);
+    if (job.status !== 'IN_PROGRESS') throw jobErr(409, 'JOB_NOT_IN_PROGRESS', 'Start the job before verifying serials');
+    const serial = String(data?.serialNumber || data?.serial_number || '').trim().toUpperCase();
+    const view = mockJobView(job);
+    const hit = view.serials.find((s) => s.serial_number.toUpperCase() === serial);
+    if (!hit) throw jobErr(409, 'SERIAL_NOT_ON_ORDER', `Serial ${serial} is not on order ${view.order?.order_number}`);
+    if (hit.verified) throw jobErr(409, 'SERIAL_ALREADY_VERIFIED', `Serial ${serial} is already verified on this job`);
+    job.verified_serials = [...(job.verified_serials || []), hit.serial_number];
+    mockDb.save();
+    return { success: true, data: { serial_number: hit.serial_number, name: hit.name } };
+  }
+
+  // 31g. POST /jobs/:id/complete (all completion gates + signature)
   const jobCompleteMatch = cleanUrl.match(/^\/jobs\/(\d+)\/complete$/);
   if (jobCompleteMatch && method === 'post') {
-    const jobId = Number(jobCompleteMatch[1]);
-    const job = (mockDb.jobs || []).find((j) => j.id === jobId);
-    if (!job) throw { response: { status: 404, data: { success: false, error: { code: 'NOT_FOUND', message: 'Job not found' } } } };
-
-    job.status = 'COMPLETED';
-    job.completed_at = new Date().toISOString();
-    if (data.remarks) job.notes = data.remarks;
+    const job = findJob(jobCompleteMatch[1]);
+    const view = mockJobView(job);
+    if (!view.you.can_start) throw jobErr(403, 'FORBIDDEN', 'Only the crew lead or an admin can complete the job');
+    if (job.status !== 'IN_PROGRESS') throw jobErr(409, 'JOB_NOT_IN_PROGRESS', 'Start the job first');
+    const missingItems = view.checklist_items.filter((i) => !i.done).map((i) => i.label);
+    if (missingItems.length) throw jobErr(409, 'CHECKLIST_INCOMPLETE', `Checklist incomplete: ${missingItems.join(', ')}`);
+    if (view.after_photos < 2) throw jobErr(409, 'NOT_ENOUGH_AFTER_PHOTOS', `Upload at least 2 AFTER photos (${view.after_photos} so far)`);
+    if (view.serials_progress.missing.length) {
+      throw jobErr(409, 'SERIALS_NOT_VERIFIED',
+        `${view.serials_progress.missing.length} serial(s) not verified on site: ${view.serials_progress.missing.join(', ')}`);
+    }
+    if (Number(data?.confirmed_capacity_kw) !== Number(job.capacity_kw)) {
+      throw jobErr(409, 'CAPACITY_MISMATCH', `Confirmed capacity ${data?.confirmed_capacity_kw} kW does not match the ordered ${job.capacity_kw} kW`);
+    }
+    if (!data?.signed_by_name || !String(data?.signature || '').startsWith('data:image/png')) {
+      throw jobErr(400, 'SIGNATURE_MISSING', 'Customer name and signature are required');
+    }
+    const now = new Date().toISOString();
+    Object.assign(job, {
+      status: 'COMPLETED',
+      completed_at: now,
+      finished_at: now,
+      signed_at: now,
+      signed_by_name: data.signed_by_name,
+      signature_data: data.signature,
+      confirmed_capacity_kw: Number(data.confirmed_capacity_kw),
+      generation_reading_kw: Number(data.generation_reading_kw),
+      notes: data.notes || data.remarks || job.notes,
+    });
 
     // Update matching order to INSTALLED
     const order = (mockDb.orders || []).find((o) => o.id === job.order_id);
@@ -1198,22 +1364,16 @@ async function mockRequest(method, url, data = null, params = null) {
       order.status = 'INSTALLED';
       if (order.job) order.job.status = 'COMPLETED';
       if (order.installation_job) order.installation_job.status = 'COMPLETED';
-      if (order.scanned_serials) {
-        order.scanned_serials.forEach((s) => {
-          s.status = 'INSTALLED';
-        });
-      }
-    }
-
-    // Update physical inventory serial items to INSTALLED
-    (mockDb.serials || []).forEach((s) => {
-      if (s.order_id === job.order_id) {
+      (order.scanned_serials || []).forEach((s) => {
         s.status = 'INSTALLED';
-      }
+      });
+    }
+    (mockDb.serials || []).forEach((s) => {
+      if (s.order_id === job.order_id) s.status = 'INSTALLED';
     });
 
     mockDb.save();
-    return { success: true, data: job };
+    return { success: true, data: { id: job.id, status: job.status, completed_at: now, certificate_url: 'mock' } };
   }
 
   // 32. POST /orders/:id/install
@@ -1299,6 +1459,23 @@ export async function openQuotePdf(quoteId, fileName = `quote-${quoteId}.pdf`) {
     return;
   }
   const res = await api.get(`/quotes/${quoteId}/pdf`, { responseType: 'blob' });
+  const url = URL.createObjectURL(res.data);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** Downloads the installation completion certificate PDF (Live) or opens the print view (Mock). */
+export async function openJobCertificate(jobId, fileName = `installation-certificate-job-${jobId}.pdf`) {
+  if (isMockMode()) {
+    window.print();
+    return;
+  }
+  const res = await api.get(`/jobs/${jobId}/certificate`, { responseType: 'blob' });
   const url = URL.createObjectURL(res.data);
   const a = document.createElement('a');
   a.href = url;

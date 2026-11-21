@@ -20,7 +20,7 @@ export default function Login() {
     const result = await login(email, password);
     if (result.success) {
       if (result.user.role === 'TECHNICIAN') {
-        navigate('/surveys', { replace: true });
+        navigate('/today', { replace: true });
       } else {
         navigate(from === '/login' ? '/leads' : from, { replace: true });
       }

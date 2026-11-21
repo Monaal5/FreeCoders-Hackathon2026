@@ -16,6 +16,8 @@ import WarehouseScan from './pages/WarehouseScan';
 import InventoryPage from './pages/InventoryPage';
 import CrewSchedule from './pages/CrewSchedule';
 import QrLabels from './pages/QrLabels';
+import FieldToday from './pages/FieldToday';
+import InstallJob from './pages/InstallJob';
 
 function ProtectedRoute({ children, allowedRoles }) {
   const { user, isAuthenticated } = useAuth();
@@ -28,7 +30,7 @@ function ProtectedRoute({ children, allowedRoles }) {
   if (allowedRoles && !allowedRoles.includes(user?.role?.toUpperCase())) {
     // Redirect to default page for their role
     if (user?.role === 'TECHNICIAN') {
-      return <Navigate to="/surveys" replace />;
+      return <Navigate to="/today" replace />;
     }
     return <Navigate to="/leads" replace />;
   }
@@ -42,7 +44,7 @@ function RootRedirect() {
     return <Navigate to="/login" replace />;
   }
   if (user?.role === 'TECHNICIAN') {
-    return <Navigate to="/surveys" replace />;
+    return <Navigate to="/today" replace />;
   }
   return <Navigate to="/leads" replace />;
 }
@@ -165,6 +167,24 @@ export default function App() {
                 element={
                   <ProtectedRoute allowedRoles={['TECHNICIAN', 'ADMIN', 'STAFF']}>
                     <SurveyForm />
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Phase 3: on-site installation (phone screens) */}
+              <Route
+                path="/today"
+                element={
+                  <ProtectedRoute allowedRoles={['TECHNICIAN']}>
+                    <FieldToday />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/field/jobs/:id"
+                element={
+                  <ProtectedRoute allowedRoles={['TECHNICIAN', 'ADMIN']}>
+                    <InstallJob />
                   </ProtectedRoute>
                 }
               />

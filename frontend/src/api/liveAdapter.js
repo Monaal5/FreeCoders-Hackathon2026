@@ -20,7 +20,7 @@ function mapKeys(value, fn) {
 export const camelizeKeys = (v) => mapKeys(v, camelKey);
 export const snakeizeKeys = (v) => mapKeys(v, snakeKey);
 
-const absUrl = (p) => (typeof p === 'string' && p.startsWith('/uploads/') ? `${API_ORIGIN}${p}` : p);
+export const absUrl = (p) => (typeof p === 'string' && p.startsWith('/uploads/') ? `${API_ORIGIN}${p}` : p);
 
 // UI source options -> backend enum
 const SOURCE_MAP = { PHONE_INBOUND: 'PHONE', WEBSITE_ENQUIRY: 'WEBSITE', MANUAL_ENTRY: 'PHONE' };
@@ -141,6 +141,27 @@ export function adaptRequest(method, url, data, params) {
     body = {
       crewLeadId: Number(data?.crew_lead_id || data?.crewLeadId),
       scheduledDate: data?.scheduled_date || data?.scheduledDate,
+    };
+  }
+
+  // Phase 3: job photos – FormData built by the page (stage + photos[]); let the browser set the boundary
+  else if (/^\/jobs\/\d+\/photos$/.test(url) && data instanceof FormData) {
+    headers = { 'Content-Type': 'multipart/form-data' };
+  }
+
+  // Phase 3: checklist – keys are UPPERCASE constants, send them untouched
+  else if (/^\/jobs\/\d+\/checklist$/.test(url)) {
+    body = { checklist: data?.checklist || data };
+  }
+
+  // Phase 3: complete – sign-off payload
+  else if (/^\/jobs\/\d+\/complete$/.test(url) && method === 'post') {
+    body = {
+      confirmedCapacityKw: data?.confirmed_capacity_kw !== undefined ? Number(data.confirmed_capacity_kw) : undefined,
+      generationReadingKw: data?.generation_reading_kw !== undefined ? Number(data.generation_reading_kw) : undefined,
+      notes: data?.notes || data?.remarks || undefined,
+      signedByName: data?.signed_by_name,
+      signature: data?.signature,
     };
   }
 
@@ -287,6 +308,19 @@ const normalizeJob = (j) => ({
   order: { id: j.order_id, order_number: j.order_number, status: j.order_status },
 });
 
+// Phase 3: job detail – photo + signature paths become absolute (they are served by the API host).
+// The raw `checklist` object has UPPERCASE keys that snakeize mangles: pages use checklist_items instead.
+function normalizeJobDetail(j) {
+  if (!j) return j;
+  const { checklist, ...rest } = j;
+  return {
+    ...normalizeJob(rest),
+    photos: (j.photos || []).map((p) => ({ ...p, url: absUrl(p.path) })),
+    signature_url: absUrl(j.signature_path),
+    certificate_url: j.certificate_url ? `${API_ORIGIN}${j.certificate_url}` : null,
+  };
+}
+
 function adaptPhase2(method, url, data) {
   if (url === '/orders' && method === 'get') return data.map(normalizeOrder);
   if (/^\/orders\/\d+$/.test(url)) return normalizeOrder(data);
@@ -307,8 +341,9 @@ function adaptPhase2(method, url, data) {
     };
   }
   if (url === '/inventory/serials') return data.map(normalizeSerial);
-  if (url.startsWith('/jobs') && method === 'get') return data.map(normalizeJob);
-  if (/^\/jobs\/\d+\/complete$/.test(url)) return normalizeJob(data);
+  if ((url === '/jobs' || url === '/jobs/my') && method === 'get') return data.map(normalizeJob);
+  if (/^\/jobs\/\d+$/.test(url) && method === 'get') return normalizeJobDetail(data);
+  if (/^\/jobs\/\d+\/photos$/.test(url)) return { ...data, added: (data.added || []).map((p) => ({ ...p, url: absUrl(p.path) })) };
   return undefined;
 }
 

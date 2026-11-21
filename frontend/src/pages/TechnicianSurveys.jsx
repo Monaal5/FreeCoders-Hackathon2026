@@ -24,26 +24,9 @@ export default function TechnicianSurveys() {
   const [surveys, setSurveys] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [completeLoadingId, setCompleteLoadingId] = useState(null);
   const [tab, setTab] = useState('TODO'); // 'TODO' | 'INSTALLATIONS' | 'SURVEYS' | 'COMPLETED' | 'ALL'
   const { user } = useAuth();
   const navigate = useNavigate();
-
-  const handleCompleteJob = async (jobId) => {
-    if (!window.confirm('Mark this solar plant installation as completed and commissioned on site?')) return;
-    try {
-      setCompleteLoadingId(jobId);
-      await apiClient.post(`/api/jobs/${jobId}/complete`, {
-        remarks: 'Site mounting, electrical connections, and commissioning completed by technician.',
-      });
-      alert('✓ Installation marked as COMPLETED! Plant commissioning verified.');
-      await fetchMyWork();
-    } catch (err) {
-      alert(err.response?.data?.message || err.message || 'Failed to complete installation job.');
-    } finally {
-      setCompleteLoadingId(null);
-    }
-  };
 
   const fetchMyWork = async () => {
     setLoading(true);
@@ -284,14 +267,13 @@ export default function TechnicianSurveys() {
                   {/* Actions */}
                   <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-100 shrink-0">
                     {job.status !== 'COMPLETED' ? (
-                      <button
-                        disabled={completeLoadingId === job.id}
-                        onClick={() => handleCompleteJob(job.id)}
+                      <Link
+                        to={`/field/jobs/${job.id}`}
                         className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition"
                       >
                         <CheckCircle className="w-3.5 h-3.5" />
-                        <span>{completeLoadingId === job.id ? 'Completing...' : 'Mark Installation Done ✓'}</span>
-                      </button>
+                        <span>{job.status === 'IN_PROGRESS' ? 'Continue Installation →' : 'Open Installation Job →'}</span>
+                      </Link>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 text-xs font-bold">
                         <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
