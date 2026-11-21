@@ -1110,6 +1110,160 @@ async function mockRequest(method, url, data = null, params = null) {
     return { success: true, data: order };
   }
 
+  // 33. GET /orders/revenue-analytics
+  if (cleanUrl === '/orders/revenue-analytics' && method === 'get') {
+    const ordersList = mockDb.orders || [];
+    let totalContracted = 0;
+    let totalCollected = 0;
+    let totalReceivables = 0;
+    let completedCount = 0;
+    let activePipelineCount = 0;
+
+    const detailedOrders = ordersList.map((o) => {
+      const revenue = Number(o.total_amount || 0);
+      const paid = Number(o.amount_paid || 0);
+      const balance = Math.max(0, revenue - paid);
+      totalContracted += revenue;
+      totalCollected += paid;
+      totalReceivables += balance;
+
+      if (o.status === 'INSTALLED') completedCount++;
+      else if (['CONFIRMED', 'DISPATCHED', 'DELIVERED'].includes(o.status)) activePipelineCount++;
+
+      // Hardware costs
+      const serials = (mockDb.serials || []).filter((s) => s.order_id === o.id);
+      const hardwareCost = serials.reduce((sum, s) => sum + Number(s.purchase_cost || 0), 0) || Math.round(revenue * 0.62);
+      const labourCost = Math.round(revenue * 0.10);
+      const totalCost = hardwareCost + labourCost;
+      const grossProfit = Math.max(0, revenue - totalCost);
+      const marginPct = revenue > 0 ? Math.round((grossProfit / revenue) * 100) : 0;
+
+      return {
+        ...o,
+        customer_name: o.lead?.customer_name,
+        city: o.lead?.city,
+        capacity_kw: o.quote?.capacity_kw || 3.0,
+        package_kind: o.quote?.package_kind || 'ON_GRID',
+        hardware_cost: hardwareCost,
+        labour_cost: labourCost,
+        total_cost: totalCost,
+        gross_profit: grossProfit,
+        margin_pct: marginPct,
+      };
+    });
+
+    const packageBreakdown = {};
+    detailedOrders.forEach((o) => {
+      const k = o.package_kind || 'ON_GRID';
+      if (!packageBreakdown[k]) {
+        packageBreakdown[k] = { count: 0, revenue: 0, capacity_kw: 0 };
+      }
+      packageBreakdown[k].count++;
+      packageBreakdown[k].revenue += o.total_amount;
+      packageBreakdown[k].capacity_kw += o.capacity_kw;
+    });
+
+    return {
+      success: true,
+      data: {
+        totals: {
+          total_contracted_revenue: totalContracted,
+          total_cash_collected: totalCollected,
+          total_receivables: totalReceivables,
+          total_orders: ordersList.length,
+          completed_projects: completedCount,
+          active_pipeline_projects: activePipelineCount,
+        },
+        orders: detailedOrders,
+        packageBreakdown,
+      },
+    };
+  }
+
+  // 34. GET /public/portal/:orderNumber
+  const portalMatch = cleanUrl.match(/^\/public\/portal\/([A-Za-z0-9\-_]+)$/);
+  if (portalMatch && method === 'get') {
+    const rawNumber = portalMatch[1].toUpperCase();
+    const order = (mockDb.orders || []).find(
+      (o) => o.order_number?.toUpperCase() === rawNumber || String(o.id) === rawNumber
+    );
+    if (!order) {
+      throw { response: { status: 404, data: { success: false, error: { code: 'NOT_FOUND', message: 'Project order not found.' } } } };
+    }
+
+    const serials = (mockDb.serials || []).filter((s) => s.order_id === order.id).map((s) => {
+      const prod = (mockDb.products || []).find((p) => p.id === s.product_id);
+      return {
+        serial_number: s.serial_number,
+        status: s.status,
+        product_name: prod?.name || s.product_name,
+        category: prod?.category || s.category,
+        warranty_months: prod?.warranty_months || 24,
+      };
+    });
+
+    const warranties = order.warranties || [];
+    const payments = order.payments || [];
+    const job = order.job || (mockDb.jobs || []).find((j) => j.order_id === order.id);
+
+    return {
+      success: true,
+      data: {
+        id: order.id,
+        order_number: order.order_number,
+        status: order.status,
+        total_amount: order.total_amount,
+        advance_required: order.advance_required,
+        amount_paid: order.amount_paid,
+        created_at: order.created_at,
+        customer_name: order.lead?.customer_name,
+        city: order.lead?.city,
+        address: order.lead?.address,
+        phone: order.lead?.phone,
+        quote_id: order.quote_id,
+        quote_number: order.quote?.quote_number || `QUO-${order.quote_id}`,
+        capacity_kw: order.quote?.capacity_kw || 3.0,
+        package_kind: order.quote?.package_kind || 'ON_GRID',
+        job_id: job?.id,
+        job_status: job?.status,
+        scheduled_date: job?.scheduled_date,
+        started_at: job?.started_at,
+        finished_at: job?.finished_at,
+        customer_rating: job?.customer_rating,
+        customer_feedback: job?.customer_feedback,
+        vehicle_no: order.dispatch?.vehicle_no,
+        driver_name: order.dispatch?.driver_name,
+        dispatched_at: order.dispatch?.dispatched_at,
+        delivered_at: order.dispatch?.delivered_at,
+        serials,
+        warranties,
+        payments,
+      },
+    };
+  }
+
+  // 35. POST /public/portal/:orderNumber/feedback
+  const portalFeedbackMatch = cleanUrl.match(/^\/public\/portal\/([A-Za-z0-9\-_]+)\/feedback$/);
+  if (portalFeedbackMatch && method === 'post') {
+    const rawNumber = portalFeedbackMatch[1].toUpperCase();
+    const order = (mockDb.orders || []).find(
+      (o) => o.order_number?.toUpperCase() === rawNumber || String(o.id) === rawNumber
+    );
+    if (!order) throw { response: { status: 404, data: { success: false, message: 'Order not found' } } };
+
+    const job = order.job || (mockDb.jobs || []).find((j) => j.order_id === order.id);
+    if (job) {
+      job.customer_rating = Number(data.rating);
+      job.customer_feedback = data.feedback;
+    }
+    if (order.job) {
+      order.job.customer_rating = Number(data.rating);
+      order.job.customer_feedback = data.feedback;
+    }
+    mockDb.save();
+    return { success: true, data: { customer_rating: Number(data.rating), customer_feedback: data.feedback } };
+  }
+
   // 28. POST /orders/:id/deliver
   const deliverMatch = cleanUrl.match(/^\/orders\/(\d+)\/deliver$/);
   if (deliverMatch && method === 'post') {

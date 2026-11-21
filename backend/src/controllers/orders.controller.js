@@ -74,4 +74,32 @@ async function deliver(req, res) {
   ok(res, await ordersService.deliverOrder(toId(req.params.id), req.user));
 }
 
-module.exports = { list, detail, pickList, pay, scan, unscan, dispatch, deliver, parseSerial };
+/** GET /api/orders/revenue-analytics */
+async function revenueAnalytics(req, res) {
+  ok(res, await ordersService.getRevenueAnalytics(req.user));
+}
+
+/** GET /api/public/portal/:orderNumber */
+async function publicPortal(req, res) {
+  ok(res, await ordersService.getPublicPortalData(req.params.orderNumber));
+}
+
+/** POST /api/public/portal/:orderNumber/feedback */
+async function publicFeedback(req, res) {
+  ok(res, await ordersService.savePublicFeedback(req.params.orderNumber, req.body));
+}
+
+module.exports = {
+  list,
+  detail,
+  pickList,
+  pay,
+  scan,
+  unscan,
+  dispatch,
+  deliver,
+  parseSerial,
+  revenueAnalytics,
+  publicPortal,
+  publicFeedback,
+};

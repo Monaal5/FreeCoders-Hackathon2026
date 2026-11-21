@@ -28,6 +28,7 @@ import {
   RotateCcw,
   Sparkles,
   Award,
+  ExternalLink,
 } from 'lucide-react';
 
 export default function OrderDetail() {
@@ -320,7 +321,17 @@ export default function OrderDetail() {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link
+            to={`/portal/${order.order_number}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 font-bold text-xs shadow-xs transition"
+            title="Open customer live tracking portal in new tab"
+          >
+            <ExternalLink className="w-4 h-4 text-amber-600" />
+            <span>Customer Portal ↗</span>
+          </Link>
           {order.status === ORDER_STATUS.PENDING_PAYMENT && (
             <button
               onClick={() => {

@@ -15,6 +15,7 @@ import {
   Calendar,
   Truck,
   QrCode,
+  TrendingUp,
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -79,6 +80,11 @@ export default function Navbar() {
                     <Link to="/jobs" className={navItemClass('/jobs')}>
                       <Truck className="w-4 h-4 text-emerald-600" />
                       <span>Crew Schedule</span>
+                    </Link>
+
+                    <Link to="/revenue" className={navItemClass('/revenue')}>
+                      <TrendingUp className="w-4 h-4 text-emerald-600" />
+                      <span>Revenue & Profit</span>
                     </Link>
                   </>
                 )}

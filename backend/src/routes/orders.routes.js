@@ -8,6 +8,9 @@ const office = authorize(ROLES.ADMIN, ROLES.STAFF);
 
 router.use(authenticate);
 
+// Financial & Profitability analytics for office
+router.get('/revenue-analytics', office, orders.revenueAnalytics);
+
 router.get('/', office, orders.list);
 // technicians may open an order only when they are its crew lead (checked in the service)
 router.get('/:id', authorize(ROLES.ADMIN, ROLES.STAFF, ROLES.TECHNICIAN), orders.detail);

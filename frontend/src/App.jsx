@@ -18,6 +18,8 @@ import CrewSchedule from './pages/CrewSchedule';
 import QrLabels from './pages/QrLabels';
 import FieldToday from './pages/FieldToday';
 import InstallJob from './pages/InstallJob';
+import RevenueDashboard from './pages/RevenueDashboard';
+import CustomerPortal from './pages/CustomerPortal';
 
 function ProtectedRoute({ children, allowedRoles }) {
   const { user, isAuthenticated } = useAuth();
@@ -60,6 +62,26 @@ export default function App() {
               {/* Public Routes */}
               <Route path="/login" element={<Login />} />
               <Route path="/enquiry" element={<PublicEnquiry />} />
+              <Route path="/portal/:orderNumber" element={<CustomerPortal />} />
+              <Route path="/track/:orderNumber" element={<CustomerPortal />} />
+
+              {/* Revenue & Profitability Analytics */}
+              <Route
+                path="/admin/revenue"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+                    <RevenueDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/revenue"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+                    <RevenueDashboard />
+                  </ProtectedRoute>
+                }
+              />
 
               {/* Protected Staff & Admin Lead Management Routes */}
               <Route

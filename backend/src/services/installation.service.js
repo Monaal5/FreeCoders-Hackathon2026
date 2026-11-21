@@ -61,7 +61,7 @@ async function loadJob(db, jobId, user, { lock = false } = {}) {
   // crew = crew lead + job_crew members (lead listed first)
   const crew = (
     await db.query(
-      `SELECT u.id, u.name, u.phone, u.hourly_rate, (u.id = $2) AS is_lead
+      `SELECT u.id, u.name, u.phone, COALESCE(u.hourly_rate, 0) AS hourly_rate, (u.id = $2) AS is_lead
          FROM users u
         WHERE u.id = $2 OR u.id IN (SELECT technician_id FROM job_crew WHERE job_id = $1)
         ORDER BY (u.id = $2) DESC, u.name`,
@@ -238,7 +238,7 @@ async function setCrew(jobId, technicianIds, actor) {
     await client.query(`INSERT INTO job_crew (job_id, technician_id) SELECT $1, unnest($2::bigint[])`, [job.id, ids]);
     const crew = (
       await client.query(
-        `SELECT u.id, u.name, u.hourly_rate, (u.id = $2) AS is_lead FROM users u WHERE u.id = ANY($1::bigint[]) ORDER BY (u.id = $2) DESC, u.name`,
+        `SELECT u.id, u.name, COALESCE(u.hourly_rate, 0) AS hourly_rate, (u.id = $2) AS is_lead FROM users u WHERE u.id = ANY($1::bigint[]) ORDER BY (u.id = $2) DESC, u.name`,
         [ids, job.crew_lead_id],
       )
     ).rows;
