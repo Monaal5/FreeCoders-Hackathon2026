@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import api, { openQuotePdf, openJobCertificate } from '../api/client';
+import api, { downloadPortalPdf } from '../api/client';
 import {
   Sun,
   CheckCircle2,
@@ -31,21 +31,54 @@ export default function CustomerPortal() {
   const [submittingReview, setSubmittingReview] = useState(false);
   const [reviewSuccess, setReviewSuccess] = useState(false);
 
-  const fetchPortalData = async () => {
+  // Access check: order number (URL) + last 4 digits of the customer's phone (typed here, sent in the
+  // request body only). Kept for this browser tab so a refresh does not ask again.
+  const accessKey = `sunpower_portal_${String(orderNumber || '').toUpperCase()}`;
+  const readSaved = () => {
+    try {
+      return sessionStorage.getItem(accessKey) || '';
+    } catch {
+      return '';
+    }
+  };
+  const [phoneLast4, setPhoneLast4] = useState(readSaved);
+  const [digitsInput, setDigitsInput] = useState('');
+  const [unlockError, setUnlockError] = useState(null);
+  const [docBusy, setDocBusy] = useState(null);
+
+  const fetchPortalData = async (digits = phoneLast4) => {
+    if (!digits) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
-      const res = await api.get(`/public/portal/${orderNumber}`);
+      setUnlockError(null);
+      const res = await api.post(`/public/portal/${orderNumber}`, { phoneLast4: digits });
       const portalData = res.data || res;
       setData(portalData);
+      setPhoneLast4(digits);
+      try {
+        sessionStorage.setItem(accessKey, digits);
+      } catch {
+        /* private mode: just ask again next time */
+      }
       if (portalData.customer_rating) {
         setRating(portalData.customer_rating);
         setFeedback(portalData.customer_feedback || '');
         setReviewSuccess(true);
       }
     } catch (err) {
-      console.error('Error loading customer portal:', err);
-      setError(err.response?.data?.message || 'We could not find a solar project with this order number.');
+      // wrong digits / unknown order / locked out: back to the unlock form with the server's message
+      try {
+        sessionStorage.removeItem(accessKey);
+      } catch {
+        /* ignore */
+      }
+      setPhoneLast4('');
+      setData(null);
+      setUnlockError(err.response?.data?.message || 'We could not open this project. Please check the details.');
     } finally {
       setLoading(false);
     }
@@ -62,6 +95,7 @@ export default function CustomerPortal() {
     try {
       setSubmittingReview(true);
       await api.post(`/public/portal/${orderNumber}/feedback`, {
+        phoneLast4,
         rating,
         feedback: feedback.trim(),
       });
@@ -70,6 +104,36 @@ export default function CustomerPortal() {
       alert(err.response?.data?.message || 'Failed to submit feedback.');
     } finally {
       setSubmittingReview(false);
+    }
+  };
+
+  const handleUnlock = (e) => {
+    e.preventDefault();
+    const digits = digitsInput.replace(/\D/g, '');
+    if (digits.length !== 4) {
+      setUnlockError('Enter exactly 4 digits.');
+      return;
+    }
+    fetchPortalData(digits);
+  };
+
+  const downloadDoc = async (kind) => {
+    try {
+      setDocBusy(kind);
+      await downloadPortalPdf(orderNumber, kind, phoneLast4);
+    } catch (err) {
+      let msg = err.response?.data?.message;
+      // blob error bodies need decoding to read the server's message
+      if (!msg && err.response?.data instanceof Blob) {
+        try {
+          msg = JSON.parse(await err.response.data.text())?.error?.message;
+        } catch {
+          /* ignore */
+        }
+      }
+      alert(msg || 'Could not download the document.');
+    } finally {
+      setDocBusy(null);
     }
   };
 
@@ -103,19 +167,45 @@ export default function CustomerPortal() {
   if (error || !data) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-xl max-w-md w-full text-center space-y-4">
-          <AlertCircle className="w-12 h-12 text-rose-500 mx-auto" />
-          <h2 className="text-xl font-black text-slate-900">Project Not Found</h2>
-          <p className="text-xs text-slate-500">
-            {error || `No active order matching "${orderNumber}". Please verify your order number or check your email confirmation.`}
-          </p>
-          <Link
-            to="/enquiry"
-            className="inline-block px-5 py-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs"
+        <form onSubmit={handleUnlock} className="bg-white p-8 rounded-3xl border border-slate-200 shadow-xl max-w-md w-full space-y-4">
+          <div className="text-center space-y-2">
+            <ShieldCheck className="w-12 h-12 text-amber-500 mx-auto" />
+            <h2 className="text-xl font-black text-slate-900">Track your solar project</h2>
+            <p className="text-xs text-slate-500">
+              Order <span className="font-mono font-bold text-slate-700">{String(orderNumber || '').toUpperCase()}</span>. To keep your
+              details private, enter the <strong>last 4 digits</strong> of the phone number you gave us.
+            </p>
+          </div>
+          <input
+            value={digitsInput}
+            onChange={(e) => setDigitsInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            inputMode="numeric"
+            autoComplete="off"
+            maxLength={4}
+            placeholder="• • • •"
+            aria-label="Last 4 digits of your phone number"
+            className="w-full text-center tracking-[0.6em] text-2xl font-black py-3 rounded-2xl border border-slate-300 focus:border-amber-500 outline-none"
+          />
+          {(unlockError || error) && (
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{unlockError || error}</span>
+            </div>
+          )}
+          <button
+            type="submit"
+            disabled={digitsInput.length !== 4}
+            className="w-full py-3 rounded-2xl bg-slate-900 text-white font-bold text-sm disabled:opacity-40"
           >
-            Submit an Enquiry
-          </Link>
-        </div>
+            View my project
+          </button>
+          <p className="text-center text-[11px] text-slate-400">
+            Not a customer yet?{' '}
+            <Link to="/enquiry" className="font-bold text-amber-600">
+              Submit an enquiry
+            </Link>
+          </p>
+        </form>
       </div>
     );
   }
@@ -141,7 +231,7 @@ export default function CustomerPortal() {
     },
     {
       title: 'Logistics & Dispatch',
-      desc: data.vehicle_no ? `Vehicle: ${data.vehicle_no}` : 'Truck staging',
+      desc: data.dispatched_at ? 'Out for delivery' : 'Truck staging',
       done: isDispatched,
       current: isDispatched && !isDelivered,
     },
@@ -336,9 +426,10 @@ export default function CustomerPortal() {
             </h2>
 
             <div className="space-y-2.5">
-              {data.quote_id && (
+              {data.quote_available && (
                 <button
-                  onClick={() => openQuotePdf(data.quote_id)}
+                  onClick={() => downloadDoc('quote')}
+                  disabled={docBusy === 'quote'}
                   className="w-full p-3 rounded-2xl border border-slate-200 hover:border-amber-400 hover:bg-amber-50/50 transition text-left flex items-center justify-between group"
                 >
                   <div className="flex items-center gap-2.5">
@@ -356,9 +447,10 @@ export default function CustomerPortal() {
                 </button>
               )}
 
-              {data.job_id && isInstalled && (
+              {data.certificate_available && (
                 <button
-                  onClick={() => openJobCertificate(data.job_id)}
+                  onClick={() => downloadDoc('certificate')}
+                  disabled={docBusy === 'certificate'}
                   className="w-full p-3 rounded-2xl border border-emerald-200 bg-emerald-50/50 hover:bg-emerald-100/70 transition text-left flex items-center justify-between group"
                 >
                   <div className="flex items-center gap-2.5">

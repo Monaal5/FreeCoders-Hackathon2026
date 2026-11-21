@@ -1180,16 +1180,25 @@ async function mockRequest(method, url, data = null, params = null) {
     };
   }
 
-  // 34. GET /public/portal/:orderNumber
-  const portalMatch = cleanUrl.match(/^\/public\/portal\/([A-Za-z0-9\-_]+)$/);
-  if (portalMatch && method === 'get') {
-    const rawNumber = portalMatch[1].toUpperCase();
-    const order = (mockDb.orders || []).find(
-      (o) => o.order_number?.toUpperCase() === rawNumber || String(o.id) === rawNumber
-    );
-    if (!order) {
-      throw { response: { status: 404, data: { success: false, error: { code: 'NOT_FOUND', message: 'Project order not found.' } } } };
+  // Public portal access check (same rule as the server): order number + last 4 phone digits
+  const portalOrder = (rawNumber, digits) => {
+    const given = String(digits ?? '').replace(/\D/g, '');
+    if (!/^\d{4}$/.test(given)) {
+      const message = 'Enter the last 4 digits of the phone number you gave us';
+      throw { response: { status: 400, data: { success: false, message, error: { code: 'VALIDATION_ERROR', message } } } };
     }
+    const order = (mockDb.orders || []).find((o) => o.order_number?.toUpperCase() === rawNumber);
+    if (!order || String(order.lead?.phone || '').replace(/\D/g, '').slice(-4) !== given) {
+      const message = 'No project matches that order number and phone number';
+      throw { response: { status: 404, data: { success: false, message, error: { code: 'NOT_FOUND', message } } } };
+    }
+    return order;
+  };
+
+  // 34. POST /public/portal/:orderNumber  { phoneLast4 }
+  const portalMatch = cleanUrl.match(/^\/public\/portal\/([A-Za-z0-9\-_]+)$/);
+  if (portalMatch && method === 'post') {
+    const order = portalOrder(portalMatch[1].toUpperCase(), data?.phoneLast4);
 
     const serials = (mockDb.serials || []).filter((s) => s.order_id === order.id).map((s) => {
       const prod = (mockDb.products || []).find((p) => p.id === s.product_id);
@@ -1209,7 +1218,6 @@ async function mockRequest(method, url, data = null, params = null) {
     return {
       success: true,
       data: {
-        id: order.id,
         order_number: order.order_number,
         status: order.status,
         total_amount: order.total_amount,
@@ -1219,20 +1227,17 @@ async function mockRequest(method, url, data = null, params = null) {
         customer_name: order.lead?.customer_name,
         city: order.lead?.city,
         address: order.lead?.address,
-        phone: order.lead?.phone,
-        quote_id: order.quote_id,
+        quote_available: true,
+        certificate_available: job?.status === 'COMPLETED',
         quote_number: order.quote?.quote_number || `QUO-${order.quote_id}`,
         capacity_kw: order.quote?.capacity_kw || 3.0,
         package_kind: order.quote?.package_kind || 'ON_GRID',
-        job_id: job?.id,
         job_status: job?.status,
         scheduled_date: job?.scheduled_date,
         started_at: job?.started_at,
         finished_at: job?.finished_at,
         customer_rating: job?.customer_rating,
         customer_feedback: job?.customer_feedback,
-        vehicle_no: order.dispatch?.vehicle_no,
-        driver_name: order.dispatch?.driver_name,
         dispatched_at: order.dispatch?.dispatched_at,
         delivered_at: order.dispatch?.delivered_at,
         serials,
@@ -1245,13 +1250,15 @@ async function mockRequest(method, url, data = null, params = null) {
   // 35. POST /public/portal/:orderNumber/feedback
   const portalFeedbackMatch = cleanUrl.match(/^\/public\/portal\/([A-Za-z0-9\-_]+)\/feedback$/);
   if (portalFeedbackMatch && method === 'post') {
-    const rawNumber = portalFeedbackMatch[1].toUpperCase();
-    const order = (mockDb.orders || []).find(
-      (o) => o.order_number?.toUpperCase() === rawNumber || String(o.id) === rawNumber
-    );
-    if (!order) throw { response: { status: 404, data: { success: false, message: 'Order not found' } } };
-
+    const order = portalOrder(portalFeedbackMatch[1].toUpperCase(), data?.phoneLast4);
     const job = order.job || (mockDb.jobs || []).find((j) => j.order_id === order.id);
+    const r = Number(data?.rating);
+    if (!Number.isInteger(r) || r < 1 || r > 5) {
+      throw { response: { status: 400, data: { success: false, message: 'rating must be a whole number from 1 to 5' } } };
+    }
+    if (job?.status !== 'COMPLETED') {
+      throw { response: { status: 409, data: { success: false, message: 'You can rate the installation once it is completed' } } };
+    }
     if (job) {
       job.customer_rating = Number(data.rating);
       job.customer_feedback = data.feedback;
@@ -1617,6 +1624,24 @@ export async function openQuotePdf(quoteId, fileName = `quote-${quoteId}.pdf`) {
   const a = document.createElement('a');
   a.href = url;
   a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** Customer portal PDFs (kind 'quote' | 'certificate'): verified with the phone digits, no login needed. */
+export async function downloadPortalPdf(orderNumber, kind, phoneLast4) {
+  if (isMockMode()) {
+    window.print();
+    return;
+  }
+  const path = kind === 'certificate' ? 'certificate' : 'quote-pdf';
+  const res = await api.post(`/public/portal/${encodeURIComponent(orderNumber)}/${path}`, { phoneLast4 }, { responseType: 'blob' });
+  const url = URL.createObjectURL(res.data);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = kind === 'certificate' ? `installation-certificate-${orderNumber}.pdf` : `quote-${orderNumber}.pdf`;
   document.body.appendChild(a);
   a.click();
   a.remove();

@@ -8,6 +8,7 @@ const { query, withTransaction } = require('../config/db');
 const { advancePercent, jobLeadDays } = require('../config/env');
 const AppError = require('../utils/AppError');
 const { round2 } = require('../utils/money');
+const { optionalText } = require('../utils/validate');
 const { canAccessLead, isScopedStaff } = require('../utils/access');
 const { ORDER_STATUS: O, assertOrderStatus, transitionOrder } = require('../utils/orderStatus');
 
@@ -521,73 +522,110 @@ async function getRevenueAnalytics(actor) {
   };
 }
 
-/** Public Customer Self-Service Portal Data */
-async function getPublicPortalData(orderNumber) {
+// ---------------------------------------------------------------------------------------------
+// Public customer portal (no login). Unlocked with order number + LAST 4 DIGITS of the phone
+// number on the lead, so knowing / guessing an order number alone reveals nothing.
+// Wrong attempts are counted by middleware/portalGuard (429 after too many).
+// ---------------------------------------------------------------------------------------------
+const PORTAL_NO_MATCH = 'No project matches that order number and phone number';
+const lastDigits = (v, n = 4) => String(v || '').replace(/\D/g, '').slice(-n);
+
+/** Returns the order row when (order number, phone last 4) match; same 404 for every miss. */
+async function verifyPortalAccess(orderNumber, phoneLast4) {
+  const given = String(phoneLast4 ?? '').replace(/\D/g, '');
+  if (!/^\d{4}$/.test(given)) {
+    throw AppError.badRequest('Enter the last 4 digits of the phone number you gave us', { field: 'phoneLast4' });
+  }
   const norm = String(orderNumber || '').trim().toUpperCase();
   const { rows } = await query(
-    `SELECT o.id, o.order_number, o.status, o.total_amount, o.advance_required, o.amount_paid, o.created_at,
-            l.customer_name, l.city, l.address, l.pincode, l.phone,
-            q.id AS quote_id, q.quote_number, q.capacity_kw, q.package_kind,
-            j.id AS job_id, j.status AS job_status, j.scheduled_date, j.started_at, j.finished_at,
+    `SELECT o.id, o.order_number, o.quote_id, l.phone FROM orders o JOIN leads l ON l.id = o.lead_id
+      WHERE o.order_number = $1`,
+    [norm],
+  );
+  const order = rows[0];
+  // one message for "no such order" and "wrong digits": the portal must not confirm order numbers
+  if (!order || lastDigits(order.phone) !== given) throw new AppError(404, 'NOT_FOUND', PORTAL_NO_MATCH);
+  return order;
+}
+
+/** Public Customer Self-Service Portal Data (after verifyPortalAccess) */
+async function getPublicPortalData(orderNumber, phoneLast4) {
+  const verified = await verifyPortalAccess(orderNumber, phoneLast4);
+  const { rows } = await query(
+    `SELECT o.order_number, o.status, o.total_amount, o.advance_required, o.amount_paid, o.created_at,
+            l.customer_name, l.city, l.address, l.pincode,
+            q.quote_number, q.capacity_kw, q.package_kind,
+            j.status AS job_status, j.scheduled_date, j.started_at, j.finished_at,
             j.confirmed_capacity_kw, j.generation_reading_kw, j.customer_rating, j.customer_feedback,
-            d.vehicle_no, d.driver_name, d.dispatched_at, d.delivered_at
+            d.dispatched_at, d.delivered_at
        FROM orders o
        JOIN leads l ON l.id = o.lead_id
        JOIN quotes q ON q.id = o.quote_id
        LEFT JOIN installation_jobs j ON j.order_id = o.id
        LEFT JOIN dispatches d ON d.order_id = o.id
-      WHERE o.order_number = $1 OR o.id::text = $1`,
-    [norm],
+      WHERE o.id = $1`,
+    [verified.id],
   );
-  if (!rows.length) throw AppError.notFound('Customer Project Order');
   const order = rows[0];
 
-  const { rows: serials } = await query(
-    `SELECT ii.serial_number, ii.status, p.name AS product_name, p.category, p.warranty_months
-       FROM inventory_items ii
-       JOIN products p ON p.id = ii.product_id
-      WHERE ii.order_id = $1
-      ORDER BY p.category, ii.serial_number`,
-    [order.id],
-  );
+  const [serials, warranties, payments] = await Promise.all([
+    query(
+      `SELECT ii.serial_number, ii.status, p.name AS product_name, p.category, p.warranty_months
+         FROM inventory_items ii
+         JOIN products p ON p.id = ii.product_id
+        WHERE ii.order_id = $1
+        ORDER BY p.category, ii.serial_number`,
+      [verified.id],
+    ).then((r) => r.rows),
+    query(
+      `SELECT w.start_date, w.end_date, w.months, ii.serial_number, p.name AS product_name, p.category
+         FROM warranties w
+         JOIN inventory_items ii ON ii.id = w.inventory_item_id
+         JOIN products p ON p.id = ii.product_id
+        WHERE w.order_id = $1
+        ORDER BY p.category, w.end_date DESC`,
+      [verified.id],
+    ).then((r) => r.rows),
+    query(`SELECT amount, type, mode, paid_at FROM payments WHERE order_id = $1 ORDER BY paid_at`, [verified.id]).then((r) => r.rows),
+  ]);
 
-  const { rows: warranties } = await query(
-    `SELECT w.id, w.start_date, w.end_date, w.months, ii.serial_number, p.name AS product_name, p.category
-       FROM warranties w
-       JOIN inventory_items ii ON ii.id = w.inventory_item_id
-       JOIN products p ON p.id = ii.product_id
-      WHERE w.order_id = $1
-      ORDER BY p.category, w.end_date DESC`,
-    [order.id],
-  );
-
-  const { rows: payments } = await query(
-    `SELECT id, amount, type, mode, paid_at FROM payments WHERE order_id = $1 ORDER BY paid_at`,
-    [order.id],
-  );
-
+  // no phone, internal ids, vehicle or driver details in the public payload
   return {
     ...order,
+    quote_available: true,
+    certificate_available: order.job_status === 'COMPLETED',
     serials,
     warranties,
     payments,
   };
 }
 
-/** Public Customer Rating & Feedback Submission */
-async function savePublicFeedback(orderNumber, { rating, feedback }) {
-  const norm = String(orderNumber || '').trim().toUpperCase();
+/** Public Customer Rating & Feedback Submission – only once the installation is completed */
+async function savePublicFeedback(orderNumber, { phoneLast4, rating, feedback } = {}) {
+  const verified = await verifyPortalAccess(orderNumber, phoneLast4);
   const numRating = Number(rating);
+  if (!Number.isInteger(numRating) || numRating < 1 || numRating > 5) {
+    throw AppError.badRequest('rating must be a whole number from 1 to 5', { field: 'rating' });
+  }
   const textFeedback = optionalText(feedback, 1000);
 
+  const { rows: jobs } = await query(`SELECT id, status FROM installation_jobs WHERE order_id = $1`, [verified.id]);
+  if (!jobs.length || jobs[0].status !== 'COMPLETED') {
+    throw AppError.conflict('You can rate the installation once it is completed', 'JOB_NOT_COMPLETED');
+  }
   const { rows } = await query(
-    `UPDATE installation_jobs
-        SET customer_rating = $2, customer_feedback = $3
-      WHERE order_id = (SELECT id FROM orders WHERE order_number = $1 OR id::text = $1)
-      RETURNING id, customer_rating, customer_feedback`,
-    [norm, numRating, textFeedback],
+    `UPDATE installation_jobs SET customer_rating = $2, customer_feedback = $3
+      WHERE id = $1 RETURNING customer_rating, customer_feedback`,
+    [jobs[0].id, numRating, textFeedback],
   );
-  return rows[0] || { success: true };
+  return rows[0];
+}
+
+/** For the public PDF downloads: ids of the quote / completed job behind a verified order. */
+async function getPortalDocuments(orderNumber, phoneLast4) {
+  const verified = await verifyPortalAccess(orderNumber, phoneLast4);
+  const { rows } = await query(`SELECT id, status FROM installation_jobs WHERE order_id = $1`, [verified.id]);
+  return { quoteId: verified.quote_id, job: rows[0] || null };
 }
 
 module.exports = {
@@ -603,4 +641,6 @@ module.exports = {
   getRevenueAnalytics,
   getPublicPortalData,
   savePublicFeedback,
+  getPortalDocuments,
+  PORTAL_NO_MATCH,
 };

@@ -3,6 +3,14 @@ const { ok, created } = require('../utils/response');
 const AppError = require('../utils/AppError');
 const { round2 } = require('../utils/money');
 const { toId, toNumber, oneOf, optionalText, requireFields } = require('../utils/validate');
+const quotesService = require('../services/quotes.service');
+const installService = require('../services/installation.service');
+const { renderQuotePdf } = require('../services/pdf.service');
+const { renderCertificate } = require('../services/certificate.service');
+const { recordPortalFailure } = require('../middleware/portalGuard');
+
+// internal reader used ONLY after the portal verified order number + phone digits
+const PORTAL_READER = Object.freeze({ id: 0, role: 'ADMIN', name: 'Customer portal' });
 
 const ORDER_STATUSES = ['PENDING_PAYMENT', 'CONFIRMED', 'DISPATCHED', 'DELIVERED', 'INSTALLED'];
 const SERIAL_RE = /^[A-Z0-9][A-Z0-9\-_/.]{2,59}$/;
@@ -79,14 +87,47 @@ async function revenueAnalytics(req, res) {
   ok(res, await ordersService.getRevenueAnalytics(req.user));
 }
 
-/** GET /api/public/portal/:orderNumber */
-async function publicPortal(req, res) {
-  ok(res, await ordersService.getPublicPortalData(req.params.orderNumber));
+// ---------- public customer portal (order number + last 4 phone digits in the BODY, never the URL) ----------
+/** Runs a portal action; a failed verification counts towards the brute-force lockout. */
+async function portalCall(req, fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    // only real guesses count (wrong order number / wrong digits), not malformed input
+    if (err instanceof AppError && err.code === 'NOT_FOUND') recordPortalFailure(req);
+    throw err;
+  }
 }
 
-/** POST /api/public/portal/:orderNumber/feedback */
+/** POST /api/public/portal/:orderNumber  { phoneLast4 } */
+async function publicPortal(req, res) {
+  ok(res, await portalCall(req, () => ordersService.getPublicPortalData(req.params.orderNumber, req.body?.phoneLast4)));
+}
+
+/** POST /api/public/portal/:orderNumber/feedback  { phoneLast4, rating 1-5, feedback? } */
 async function publicFeedback(req, res) {
-  ok(res, await ordersService.savePublicFeedback(req.params.orderNumber, req.body));
+  ok(res, await portalCall(req, () => ordersService.savePublicFeedback(req.params.orderNumber, req.body || {})));
+}
+
+/** POST /api/public/portal/:orderNumber/quote-pdf  { phoneLast4 } */
+async function publicQuotePdf(req, res) {
+  const docs = await portalCall(req, () => ordersService.getPortalDocuments(req.params.orderNumber, req.body?.phoneLast4));
+  const quote = await quotesService.getQuote(docs.quoteId, PORTAL_READER);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${quote.quote_number}.pdf"`);
+  renderQuotePdf(quote, res);
+}
+
+/** POST /api/public/portal/:orderNumber/certificate  { phoneLast4 } */
+async function publicCertificate(req, res) {
+  const docs = await portalCall(req, () => ordersService.getPortalDocuments(req.params.orderNumber, req.body?.phoneLast4));
+  if (!docs.job || docs.job.status !== 'COMPLETED') {
+    throw AppError.conflict('The certificate is available once the installation is completed', 'JOB_NOT_COMPLETED');
+  }
+  const job = await installService.getJobDetail(docs.job.id, PORTAL_READER);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="installation-certificate-${job.order_number}.pdf"`);
+  renderCertificate(job, res);
 }
 
 module.exports = {
@@ -102,4 +143,6 @@ module.exports = {
   revenueAnalytics,
   publicPortal,
   publicFeedback,
+  publicQuotePdf,
+  publicCertificate,
 };

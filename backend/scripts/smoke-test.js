@@ -344,6 +344,35 @@ async function api(method, url, { token, body, form } = {}) {
   }
   check('P3 other staff cannot get the certificate 404', (await api('GET', J('/certificate'), { token: other })).status === 404);
 
+  // ---- public customer portal: order number + last 4 phone digits (test lead phone ends 6789) ----
+  const ON = od3.orderNumber;
+  const portal = (sub, body) => api('POST', `/public/portal/${ON}${sub}`, { body });
+  check('portal old GET route gone', (await api('GET', `/public/portal/${ON}`)).status === 404);
+  check('portal without digits 400', (await portal('', {})).status === 400);
+  const pWrong = await portal('', { phoneLast4: '0000' });
+  const pNoOrder = await api('POST', '/public/portal/SPO-1999-9999', { body: { phoneLast4: '6789' } });
+  check('portal wrong digits / unknown order: same 404 message', pWrong.status === 404 && pNoOrder.status === 404
+    && pWrong.json.error.message === pNoOrder.json.error.message, [pWrong.json, pNoOrder.json]);
+  check('portal cannot open by internal id', (await api('POST', `/public/portal/${od3.id}`, { body: { phoneLast4: '6789' } })).status === 404);
+  const pOk = await portal('', { phoneLast4: '6789' });
+  const pd = pOk.json?.data || {};
+  check('portal opens with right digits', pOk.status === 200 && pd.orderNumber === ON && pd.certificateAvailable === true, pOk.json);
+  check('portal hides phone, ids, vehicle, driver', !('phone' in pd) && !('id' in pd) && !('quoteId' in pd) && !('jobId' in pd)
+    && !('vehicleNo' in pd) && !('driverName' in pd), Object.keys(pd));
+  check('portal feedback rating 9 -> 400', (await portal('/feedback', { phoneLast4: '6789', rating: 9 })).status === 400);
+  check('portal feedback wrong digits 404', (await portal('/feedback', { phoneLast4: '1111', rating: 5 })).status === 404);
+  const fb = await portal('/feedback', { phoneLast4: '6789', rating: 5, feedback: 'Great crew' });
+  check('portal feedback saved', fb.status === 200 && fb.json.data.customerRating === 5, fb.json);
+  const pq = await portal('/quote-pdf', { phoneLast4: '6789' });
+  const pc = await portal('/certificate', { phoneLast4: '6789' });
+  check('portal quote + certificate PDFs without login', pq.buf?.subarray(0, 4).toString() === '%PDF' && pc.buf?.subarray(0, 4).toString() === '%PDF', [pq.status, pc.status]);
+  check('portal certificate wrong digits 404', (await portal('/certificate', { phoneLast4: '1234' })).status === 404);
+  // lockout: 5 wrong guesses on one order number, then even a right guess is refused for a while
+  const lockNo = 'SPO-1999-0001';
+  for (let i = 0; i < 5; i++) await api('POST', `/public/portal/${lockNo}`, { body: { phoneLast4: String(1000 + i) } });
+  const locked = await api('POST', `/public/portal/${lockNo}`, { body: { phoneLast4: '6789' } });
+  check('portal brute force locked 429', locked.status === 429 && locked.json.error.code === 'TOO_MANY_ATTEMPTS', locked.json);
+
   // reject path on seeded SURVEY_SUBMITTED lead + lost
   const seeded = (await api('GET', '/leads?status=SURVEY_SUBMITTED', { token: admin })).json.data.items[0];
   const seededDet = (await api('GET', `/leads/${seeded.id}`, { token: admin })).json.data;
