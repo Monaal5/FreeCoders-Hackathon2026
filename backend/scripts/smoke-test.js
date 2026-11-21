@@ -154,6 +154,113 @@ async function api(method, url, { token, body, form } = {}) {
   check('lead WON', det.json.data.status === 'WON', det.json.data.status);
   console.log('   timeline:', det.json.data.activities.map((a) => a.toStatus || a.type).reverse().join(' > '));
 
+  // ============ Phase 2: order -> payment -> pick list & scan -> dispatch -> deliver -> warranty ============
+  const ord0 = acc.json.data.order;
+  check('P2 order created on ACCEPTED (same transaction)', ord0 && ord0.status === 'PENDING_PAYMENT' && ord0.quoteId === d.id, acc.json.data);
+  const oid = ord0.id;
+  check('P2 advance required = 30% of total', Math.abs(ord0.advanceRequired - Math.round(d.total * 30) / 100) < 0.01, [ord0.advanceRequired, d.total]);
+  check('P2 lead detail lists the order', det.json.data.orders?.[0]?.id === oid, det.json.data.orders);
+  const pay = (body, token = staff) => api('POST', `/orders/${oid}/payments`, { token, body });
+  const scan = (serialNumber, token = staff) => api('POST', `/orders/${oid}/scan`, { token, body: { serialNumber } });
+
+  check('P2 other staff cannot see the order 404', (await api('GET', `/orders/${oid}`, { token: other })).status === 404);
+  check('P2 technician cannot list orders 403', (await api('GET', '/orders', { token: tech })).status === 403);
+  const scanEarly = await scan('INV-ONG-3-SN0001');
+  check('P2 scan before confirmation 409', scanEarly.status === 409 && scanEarly.json.error.code === 'INVALID_ORDER_STATUS', scanEarly.json);
+  const overpay = await pay({ amount: ord0.totalAmount + 1, mode: 'UPI' });
+  check('P2 overpayment 409', overpay.status === 409 && overpay.json.error.code === 'OVERPAYMENT', overpay.json);
+  check('P2 bad payment mode 400', (await pay({ amount: 100, mode: 'BITCOIN' })).status === 400);
+  const small = await pay({ amount: 10000, mode: 'CASH' });
+  check('P2 part advance keeps PENDING_PAYMENT', small.status === 201 && small.json.data.order.status === 'PENDING_PAYMENT' && small.json.data.payment.type === 'ADVANCE' && !small.json.data.confirmed, small.json);
+  const adv = await pay({ amount: Math.round((ord0.advanceRequired - 10000) * 100) / 100, mode: 'UPI', reference: 'UPI-TEST-123' });
+  check('P2 crossing the advance threshold confirms the order', adv.json.data?.confirmed === true && adv.json.data.order.status === 'CONFIRMED' && adv.json.data.payment.type === 'ADVANCE', adv.json);
+
+  const pl = (await api('GET', `/orders/${oid}/pick-list`, { token: staff })).json.data;
+  const line = (sku) => pl.lines.find((l) => l.sku === sku);
+  check('P2 pick list = quote hardware, no services', pl.lines.length === 14 && !pl.lines.some((l) => l.category === 'SERVICE'), pl.lines.map((l) => l.sku));
+  check('P2 serialized lines: 6 panels, 1 inverter, 1 controller', line('PNL-540').qtyRequired === 6 && line('INV-ONG-3').isSerialized && line('CC-MPPT-60').qtyRequired === 1 && pl.serialsRequired === 8, pl.lines);
+  const od1 = (await api('GET', `/orders/${oid}`, { token: staff })).json.data;
+  check('P2 installation job created on confirmation', od1.installationJob?.status === 'SCHEDULED' && od1.payments.length === 2, od1.installationJob);
+
+  // inventory: list, low stock, receive, serial search, ledger
+  const invList = (await api('GET', '/inventory', { token: staff })).json.data;
+  const prod = (sku) => invList.find((p) => p.sku === sku);
+  check('P2 inventory lists stock + low-stock flags', prod('BOS-LA').lowStock === true && prod('MC4-PAIR').lowStock === false && prod('PNL-540').serialsInStock >= 24, [prod('BOS-LA'), prod('PNL-540')]);
+  check('P2 services are not inventory', !invList.some((p) => p.category === 'SERVICE'));
+  const isoBefore = prod('SW-DC-ISO').available;
+  const recvBulk = await api('POST', '/inventory/receive', { token: staff, body: { productId: prod('SW-DC-ISO').id, quantity: 10, note: 'PO-77' } });
+  check('P2 receive bulk stock', recvBulk.status === 201 && recvBulk.json.data.stockQty === isoBefore + 10, recvBulk.json);
+  const recvSer = await api('POST', '/inventory/receive', { token: staff, body: { productId: prod('INV-ONG-3').id, serials: ['INV-ONG-3-TEST-0001', 'inv-ong-3-test-0002'], purchaseCost: 26000 } });
+  check('P2 receive serials (normalised to upper case)', recvSer.status === 201 && recvSer.json.data.received === 2 && recvSer.json.data.serials.some((s) => s.serialNumber === 'INV-ONG-3-TEST-0002'), recvSer.json);
+  const recvDup = await api('POST', '/inventory/receive', { token: staff, body: { productId: prod('INV-ONG-3').id, serials: ['INV-ONG-3-TEST-0001'] } });
+  check('P2 duplicate serial 409', recvDup.status === 409 && recvDup.json.error.code === 'DUPLICATE_SERIAL', recvDup.json);
+  check('P2 quantity for a serialized product 400', (await api('POST', '/inventory/receive', { token: staff, body: { productId: prod('INV-ONG-3').id, quantity: 2 } })).status === 400);
+  check('P2 serials for a bulk product 400', (await api('POST', '/inventory/receive', { token: staff, body: { productId: prod('MC4-PAIR').id, serials: ['MC4-X-001'] } })).status === 400);
+  const serialSearch = (await api('GET', `/inventory/serials?productId=${prod('INV-ONG-3').id}&status=IN_STOCK`, { token: staff })).json.data;
+  check('P2 serial search by product + status', serialSearch.length === 5 && serialSearch.every((s) => s.status === 'IN_STOCK'), serialSearch.length);
+
+  // scan rules (all 409)
+  const unknownSerial = await scan('NOPE-0000');
+  check('P2 scan unknown serial 409', unknownSerial.status === 409 && unknownSerial.json.error.code === 'SERIAL_NOT_FOUND', unknownSerial.json);
+  const wrongProduct = await scan('BAT-150-SN0001');
+  check('P2 scan product not on pick list 409', wrongProduct.status === 409 && wrongProduct.json.error.code === 'NOT_ON_PICK_LIST', wrongProduct.json);
+  const early = await api('POST', `/orders/${oid}/dispatch`, { token: staff, body: { vehicleNo: 'MH12 AB 1234', driverName: 'Ramesh' } });
+  check('P2 dispatch with incomplete pick list 409', early.status === 409 && early.json.error.code === 'PICK_LIST_INCOMPLETE', early.json);
+  const s1 = await scan('inv-ong-3-sn0001');
+  check('P2 scan inverter reserves it', s1.status === 200 && s1.json.data.scanned.status === 'RESERVED', s1.json);
+  const again1 = await scan('INV-ONG-3-SN0001');
+  check('P2 same serial twice 409', again1.status === 409 && again1.json.error.code === 'SERIAL_NOT_AVAILABLE', again1.json);
+  const full1 = await scan('INV-ONG-3-SN0002');
+  check('P2 line already fully scanned 409', full1.status === 409 && full1.json.error.code === 'LINE_FULLY_SCANNED', full1.json);
+  check('P2 scan controller', (await scan('CC-MPPT-60-SN0001')).status === 200);
+  let panelsOk = true;
+  for (let i = 1; i <= 6; i++) panelsOk = panelsOk && (await scan(`PNL-540-SN000${i}`)).status === 200;
+  check('P2 scan 6 panels', panelsOk);
+  const seventh = await scan('PNL-540-SN0007');
+  check('P2 7th panel 409 (line full)', seventh.status === 409 && seventh.json.error.code === 'LINE_FULLY_SCANNED');
+  const undo = await api('DELETE', `/orders/${oid}/scan/PNL-540-SN0006`, { token: staff });
+  check('P2 undo a scan frees the unit', undo.status === 200 && undo.json.data.released.status === 'IN_STOCK' && undo.json.data.pickList.serialsScanned === 7, undo.json);
+  check('P2 undo unknown scan 404', (await api('DELETE', `/orders/${oid}/scan/PNL-540-SN0020`, { token: staff })).status === 404);
+  const rescan = await scan('PNL-540-SN0006');
+  check('P2 pick list complete after re-scan', rescan.json.data?.pickList.complete === true && rescan.json.data.pickList.readyToDispatch === true, rescan.json);
+  check('P2 other staff cannot scan 404', (await scan('PNL-540-SN0010', other)).status === 404);
+
+  // dispatch
+  check('P2 bad vehicle number 400', (await api('POST', `/orders/${oid}/dispatch`, { token: staff, body: { vehicleNo: '!', driverName: 'R' } })).status === 400);
+  const disp = await api('POST', `/orders/${oid}/dispatch`, { token: staff, body: { vehicleNo: 'mh12 ab 1234', driverName: 'Ramesh Patil' } });
+  check('P2 dispatch: order DISPATCHED, 8 serials out', disp.status === 200 && disp.json.data.order.status === 'DISPATCHED' && disp.json.data.serialsDispatched === 8 && disp.json.data.dispatch.vehicleNo === 'MH12 AB 1234', disp.json);
+  const invAfter = (await api('GET', '/inventory', { token: staff })).json.data;
+  const after = (sku) => invAfter.find((p) => p.sku === sku);
+  check('P2 bulk stock reduced (stands -3, isolator -1)', after('STR-GI').available === prod('STR-GI').available - 3 && after('SW-DC-ISO').available === isoBefore + 10 - 1, [after('STR-GI').available, after('SW-DC-ISO').available]);
+  const ledger = (await api('GET', `/inventory/movements?productId=${prod('STR-GI').id}`, { token: staff })).json.data;
+  check('P2 stock ledger records the dispatch', ledger[0].reason === 'DISPATCHED' && ledger[0].qtyChange === -3 && ledger[0].orderId === oid, ledger[0]);
+  check('P2 scan after dispatch 409', (await scan('PNL-540-SN0011')).status === 409);
+  check('P2 dispatch twice 409', (await api('POST', `/orders/${oid}/dispatch`, { token: staff, body: { vehicleNo: 'MH12 AB 1234', driverName: 'R' } })).status === 409);
+
+  // installation job: assign crew lead + date; technician sees own job and confirms delivery
+  check('P2 tech cannot deliver before being crew lead 404', (await api('POST', `/orders/${oid}/deliver`, { token: tech })).status === 404);
+  const techId = (await api('GET', '/users?role=TECHNICIAN', { token: admin })).json.data[0].id;
+  const jobId = od1.installationJob.id;
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  check('P2 job date in the past 400', (await api('PATCH', `/jobs/${jobId}/assign`, { token: staff, body: { crewLeadId: techId, scheduledDate: '2020-01-01' } })).status === 400);
+  check('P2 other staff cannot assign job 404', (await api('PATCH', `/jobs/${jobId}/assign`, { token: other, body: { crewLeadId: techId, scheduledDate: tomorrow } })).status === 404);
+  const assignJ = await api('PATCH', `/jobs/${jobId}/assign`, { token: staff, body: { crewLeadId: techId, scheduledDate: tomorrow } });
+  check('P2 assign crew lead + date', assignJ.status === 200 && assignJ.json.data.crewLeadId === techId && assignJ.json.data.scheduledDate === tomorrow, assignJ.json);
+  const techJobs = (await api('GET', `/jobs?from=${tomorrow}&to=${tomorrow}`, { token: tech })).json.data;
+  check('P2 technician sees own job', techJobs.length === 1 && techJobs[0].id === jobId && techJobs[0].customerName, techJobs);
+  const deliv = await api('POST', `/orders/${oid}/deliver`, { token: tech });
+  check('P2 crew lead confirms delivery: 8 warranties start', deliv.status === 200 && deliv.json.data.order.status === 'DELIVERED' && deliv.json.data.warrantiesStarted === 8, deliv.json);
+  const od2 = (await api('GET', `/orders/${oid}`, { token: staff })).json.data;
+  const pw = od2.warranties.find((w) => w.sku === 'PNL-540'), iw = od2.warranties.find((w) => w.sku === 'INV-ONG-3');
+  const plusYears = (dt, y) => { const x = new Date(dt + 'T00:00:00Z'); x.setUTCFullYear(x.getUTCFullYear() + y); return x.toISOString().slice(0, 10); };
+  check('P2 warranty months from product: panel 240, inverter 24', pw.months === 240 && iw.months === 24 && pw.endDate === plusYears(pw.startDate, 20) && iw.endDate === plusYears(iw.startDate, 2), [pw, iw]);
+  check('P2 all order serials DELIVERED', od2.serials.length === 8 && od2.serials.every((s) => s.status === 'DELIVERED') && od2.dispatch.deliveredAt, od2.serials.map((s) => s.status));
+  check('P2 deliver twice 409', (await api('POST', `/orders/${oid}/deliver`, { token: staff })).status === 409);
+  const bal = await pay({ amount: od2.balanceDue, mode: 'BANK', reference: 'NEFT-998' });
+  check('P2 balance payment closes the account', bal.json.data?.payment.type === 'BALANCE' && bal.json.data.balanceDue === 0, bal.json);
+  check('P2 nothing left to pay 409', (await pay({ amount: 1, mode: 'CASH' })).json?.error?.code === 'ALREADY_PAID');
+  console.log('   order:', od2.orderNumber, '| paid', od2.amountPaid, 'of', od2.totalAmount, '| warranties', od2.warranties.length);
+
   // reject path on seeded SURVEY_SUBMITTED lead + lost
   const seeded = (await api('GET', '/leads?status=SURVEY_SUBMITTED', { token: admin })).json.data.items[0];
   const seededDet = (await api('GET', `/leads/${seeded.id}`, { token: admin })).json.data;

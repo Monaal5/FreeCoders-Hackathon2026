@@ -13,4 +13,8 @@ module.exports = {
   jwtSecret: process.env.JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '8h',
   corsOrigins: (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map((s) => s.trim()),
+  // Phase 2: an order is CONFIRMED once at least this % of the total is paid (or the full amount)
+  advancePercent: Math.min(100, Math.max(0, Number(process.env.ADVANCE_PERCENT ?? 30))),
+  // Phase 2: default installation date = confirmation date + N days (crew lead assigned later)
+  jobLeadDays: Number(process.env.JOB_LEAD_DAYS ?? 7),
 };

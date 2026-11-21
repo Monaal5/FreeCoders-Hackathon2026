@@ -3,6 +3,7 @@ const AppError = require('../utils/AppError');
 const { LEAD_STATUS, transitionLead, assertStatus } = require('../utils/leadStatus');
 const { round2 } = require('../utils/money');
 const { assertLeadAccess, canAccessLead } = require('../utils/access');
+const { createOrderForQuote } = require('./orders.service');
 
 const QUOTE_TRANSITIONS = Object.freeze({
   DRAFT: ['SENT', 'ACCEPTED', 'REJECTED'],
@@ -196,6 +197,9 @@ async function updateQuoteStatus(id, toStatus, actor) {
           WHERE lead_id = $1 AND id <> $2 AND status IN ('DRAFT', 'SENT')`,
         [quote.lead_id, id],
       );
+      // Phase 2: the order is created in the SAME transaction as the acceptance
+      const order = await createOrderForQuote(client, updated.rows[0], actor);
+      return { ...updated.rows[0], order };
     } else {
       await client.query(
         `INSERT INTO lead_activities (lead_id, actor_id, type, note) VALUES ($1, $2, 'NOTE', $3)`,

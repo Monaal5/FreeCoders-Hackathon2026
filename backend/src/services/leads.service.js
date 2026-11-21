@@ -162,7 +162,7 @@ async function listLeads({ statuses, q, assignedTo, source, page, limit, scopeAs
 
 async function getLeadDetail(id, user) {
   await assertLeadAccess({ query }, id, user); // 404 if missing or not this staff member's lead
-  const [lead, surveys, quotes, activities] = await Promise.all([
+  const [lead, surveys, quotes, activities, orders] = await Promise.all([
     query(
       `SELECT l.*, u.name AS assigned_to_name, c.name AS created_by_name
          FROM leads l
@@ -196,9 +196,22 @@ async function getLeadDetail(id, user) {
         ORDER BY a.created_at DESC, a.id DESC`,
       [id],
     ),
+    // Phase 2: the order created when a quote was accepted (at most one open per accepted quote)
+    query(
+      `SELECT o.id, o.order_number, o.status, o.total_amount, o.advance_required, o.amount_paid,
+              o.total_amount - o.amount_paid AS balance_due, o.quote_id, o.created_at
+         FROM orders o WHERE o.lead_id = $1 ORDER BY o.created_at DESC`,
+      [id],
+    ),
   ]);
   if (!lead.rows.length) throw AppError.notFound('Lead');
-  return { ...lead.rows[0], surveys: surveys.rows, quotes: quotes.rows, activities: activities.rows };
+  return {
+    ...lead.rows[0],
+    surveys: surveys.rows,
+    quotes: quotes.rows,
+    activities: activities.rows,
+    orders: orders.rows,
+  };
 }
 
 /** NEW -> QUALIFIED. Stores qualification answers (JSONB) and the suggested system size. */
