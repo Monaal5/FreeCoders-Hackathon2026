@@ -1,0 +1,528 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>SunPower Code Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column (~1000px) with full-width tables; sun-amber accent for A/B wayfinding, slate neutrals with a warm bias */
+:root {
+  --bg: #fbfaf7; --surface: #ffffff; --sunk: #f3f1ec; --fg: #1d2129; --muted: #5d6470; --line: #e3e0d8;
+  --accent: #c2620a; --accent-soft: #fdf0e1;
+  --a: #c2620a; --a-soft: #fdf0e1;      /* Person A – backend & database */
+  --b: #2f6f9f; --b-soft: #e5f0f8;      /* Person B – frontend */
+  --ok: #2e7d4f;
+  --font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #14161a; --surface: #1b1e23; --sunk: #22262c; --fg: #e8e6e1; --muted: #a2a8b1; --line: #30353d;
+  --accent: #f0a45a; --accent-soft: #3a2a1a; --a: #f0a45a; --a-soft: #3a2a1a; --b: #7fb6df; --b-soft: #1b2c3a; --ok: #6cc38f;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #14161a; --surface: #1b1e23; --sunk: #22262c; --fg: #e8e6e1; --muted: #a2a8b1; --line: #30353d;
+  --accent: #f0a45a; --accent-soft: #3a2a1a; --a: #f0a45a; --a-soft: #3a2a1a; --b: #7fb6df; --b-soft: #1b2c3a; --ok: #6cc38f;
+  color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 64px; }
+.wrap { max-width: 1000px; margin: 0 auto; display: grid; gap: 44px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.2; margin: 0; }
+h1 { font-size: clamp(30px, 5vw, 44px); letter-spacing: -0.02em; }
+h2 { font-size: 24px; letter-spacing: -0.01em; }
+h3 { font-size: 17px; }
+p { margin: 0; max-width: 72ch; }
+section { display: grid; gap: 16px; min-width: 0; }
+.eyebrow { font: 600 12px/1 var(--font-body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.lede { font-size: 17px; color: var(--muted); }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+code { background: var(--sunk); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.muted { color: var(--muted); }
+a { color: var(--accent); }
+
+.flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font: 500 13px var(--font-mono); }
+.flow span { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px; }
+.flow i { color: var(--muted); font-style: normal; }
+
+.owner { display: inline-block; font: 600 11px/1 var(--font-body); letter-spacing: 0.05em; padding: 4px 7px; border-radius: 4px; white-space: nowrap; }
+.owner.a { color: var(--a); background: var(--a-soft); }
+.owner.b { color: var(--b); background: var(--b-soft); }
+.owner.ab { color: var(--fg); background: var(--sunk); }
+
+.split { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; display: grid; gap: 10px; min-width: 0; align-content: start; }
+.panel.a { border-top: 3px solid var(--a); }
+.panel.b { border-top: 3px solid var(--b); }
+.panel ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+
+/* bars drawn to one scale: 3,473 lines = 100% */
+.bars { display: grid; gap: 10px; }
+.bar { display: grid; grid-template-columns: minmax(150px, 230px) 1fr 64px; gap: 12px; align-items: center; font-size: 13.5px; }
+.bar .track { height: 14px; background: var(--sunk); border-radius: 3px; overflow: hidden; }
+.bar .fill { height: 100%; border-radius: 3px; }
+.bar .fill.a { background: var(--a); } .bar .fill.b { background: var(--b); }
+.bar .n { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 12.5px; }
+@media (max-width: 560px) { .bar { grid-template-columns: 1fr 56px; } .bar .track { grid-column: 1 / -1; grid-row: 2; } }
+
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; min-width: 640px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+th { font: 600 11.5px var(--font-body); letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); background: var(--sunk); }
+tr:last-child td { border-bottom: 0; }
+td.file { font-family: var(--font-mono); font-size: 12.5px; white-space: nowrap; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 12.5px; }
+tr.group td { background: var(--accent-soft); font: 600 12px var(--font-body); letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); }
+
+.logic { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+.logic .panel h3 { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.logic .panel .where { font: 500 12px var(--font-mono); color: var(--muted); overflow-wrap: anywhere; }
+
+.states { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.state { font: 600 12px var(--font-mono); padding: 5px 9px; border-radius: 5px; background: var(--surface); border: 1px solid var(--line); }
+.state.end { border-color: var(--ok); color: var(--ok); }
+
+ol.steps { margin: 0; padding-left: 22px; display: grid; gap: 8px; max-width: 80ch; }
+.diagram { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; overflow-x: auto; }
+.callout { background: var(--accent-soft); border-radius: 10px; padding: 14px 18px; }
+footer { color: var(--muted); font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="wrap">
+
+<header style="display:grid;gap:14px">
+  <div class="eyebrow">FreeCoders Hackathon 2026 · Phase 1 technical map</div>
+  <h1>SunPower Code Map</h1>
+  <p class="lede">A solar company's CRM: an enquiry becomes a qualified lead, gets a site survey with photos, an admin approves it, and staff send a quote built from a ready-made package with every part listed automatically. This page shows how the code is split between Person A (backend + database) and Person B (frontend), what each file does, and which logic carries the system.</p>
+  <div class="flow" aria-label="Lead flow">
+    <span>Enquiry</span><i>→</i><span>Qualify</span><i>→</i><span>Survey + photos</span><i>→</i><span>Admin approval</span><i>→</i><span>Quote from package</span><i>→</i><span>PDF</span><i>→</i><span>Won</span>
+  </div>
+</header>
+
+<section>
+  <h2>Stack and how the pieces talk</h2>
+  <div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  subgraph B["Person B — frontend (React 18 + Vite + Tailwind)"]
+    P["pages/*.jsx<br/>screens per role"] --> C["api/client.js<br/>axios + JWT + mock/live switch"]
+    C --> AD["api/liveAdapter.js<br/>shape translation"]
+  end
+  subgraph A["Person A — backend (Express 5 + pg)"]
+    R["routes/*"] --> M["middleware<br/>auth · roles · upload · error"] --> CT["controllers/*<br/>validate input"] --> S["services/*<br/>SQL + business rules"]
+    S --> U["utils<br/>leadStatus · access · sizing · money"]
+  end
+  AD -- "HTTP JSON /api" --> R
+  S -- "parameterised SQL,<br/>transactions" --> DB[("PostgreSQL 17<br/>9 tables + enums")]
+  S --> PDF["PDFKit quote PDF"]
+  M --> UP["uploads/surveys<br/>(Multer)"]
+</pre>
+  </div>
+  <div class="split">
+    <div class="panel a">
+      <h3><span class="owner a">Person A</span> Backend + database</h3>
+      <ul>
+        <li><strong>Node 22+ / Express 5</strong>: async errors reach the error handler automatically</li>
+        <li><strong>PostgreSQL 17</strong> via <code>pg</code> (node-postgres), plain SQL, no ORM</li>
+        <li><strong>embedded-postgres</strong>: a private database server run from <code>node_modules</code>, on port 5433, with no system install</li>
+        <li>bcryptjs, jsonwebtoken (JWT auth), Multer (photo upload), PDFKit (quote PDF)</li>
+      </ul>
+    </div>
+    <div class="panel b">
+      <h3><span class="owner b">Person B</span> Frontend</h3>
+      <ul>
+        <li><strong>React 18 + Vite 5</strong>, React Router 6, Tailwind CSS 3</li>
+        <li><strong>Axios</strong> client with the token attached to every request</li>
+        <li><strong>Mock/Live switch</strong>: a full in-browser mock of the API, so the UI could be built before the backend existed</li>
+        <li>lucide-react icons, canvas-confetti for celebration moments</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Where the code weight sits</h2>
+  <p class="muted">Hand-written lines per area, all drawn to the same scale. That's about 8,200 lines in total, leaving out lockfiles and the generated Postman collection (955 lines).</p>
+  <div class="bars">
+    <div class="bar"><span>Frontend pages (8 screens)</span><div class="track"><div class="fill b" style="width:100%"></div></div><span class="n">3,473</span></div>
+    <div class="bar"><span>Frontend API layer (client, adapter, mock data)</span><div class="track"><div class="fill b" style="width:43.3%"></div></div><span class="n">1,505</span></div>
+    <div class="bar"><span>Backend services (business logic)</span><div class="track"><div class="fill a" style="width:25%"></div></div><span class="n">869</span></div>
+    <div class="bar"><span>Frontend shell (App, auth, components, utils)</span><div class="track"><div class="fill b" style="width:19.2%"></div></div><span class="n">667</span></div>
+    <div class="bar"><span>Backend controllers + routes + middleware</span><div class="track"><div class="fill a" style="width:14.7%"></div></div><span class="n">509</span></div>
+    <div class="bar"><span>Database SQL (schema, seed, packages, migration)</span><div class="track"><div class="fill a" style="width:14.4%"></div></div><span class="n">499</span></div>
+    <div class="bar"><span>Backend utils + config</span><div class="track"><div class="fill a" style="width:11.1%"></div></div><span class="n">386</span></div>
+    <div class="bar"><span>Scripts + automated test</span><div class="track"><div class="fill a" style="width:8.4%"></div></div><span class="n">292</span></div>
+  </div>
+  <div class="callout">
+    <p><strong>Reading the bars:</strong> the frontend is about 69% of the lines, because UI markup is verbose. The backend and database are about 31% of the lines, but they hold the rules that make the system trustworthy: the lead state machine, transactions, ownership, BOM generation and quote maths. By importance, the top five files are listed under <a href="#most">"Files that matter most"</a>.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Who did what</h2>
+  <div class="split">
+    <div class="panel a">
+      <h3><span class="owner a">Person A</span> tasks A1–A9, then integration</h3>
+      <ul>
+        <li>A1–A2: schema, enums, indexes, and demo seed data (users, products, packages, leads)</li>
+        <li>A3–A4: Express skeleton, <code>withTransaction()</code>, error handler, JWT login, role checks</li>
+        <li>A5–A6: enquiries with auto-assign, lead list/search, qualify, lost, and the <strong>state machine</strong></li>
+        <li>A7: survey assignment, technician photo upload, admin review</li>
+        <li>A8: quotes from packages, automatic BOM, discount + GST, PDF</li>
+        <li>A9: Postman collection and a 64-check smoke test</li>
+        <li>Later: live adapter for B's UI, staff-only-own-leads rule, ready-made packages</li>
+      </ul>
+    </div>
+    <div class="panel b">
+      <h3><span class="owner b">Person B</span> tasks B1–B8</h3>
+      <ul>
+        <li>B1: Vite + Router + Axios client, and a mock API following the agreed contract</li>
+        <li>B2: login screen, auth context, redirect by role</li>
+        <li>B3: public enquiry form with a live kW estimate</li>
+        <li>B4: lead inbox with status filters, search and manual "New lead"</li>
+        <li>B5: lead detail with timeline and status-based buttons (qualify, schedule, review, quote)</li>
+        <li>B6: technician survey list and a mobile-friendly survey form with photos</li>
+        <li>B7: quote builder and quote view with print</li>
+        <li>B8: switch from mock to the real API (finished through <code>liveAdapter.js</code>)</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>The lead journey and the files behind each step</h2>
+  <div class="states" aria-label="Lead states">
+    <span class="state">NEW</span><i class="muted">→</i><span class="state">QUALIFIED</span><i class="muted">→</i><span class="state">SURVEY_SCHEDULED</span><i class="muted">→</i><span class="state">SURVEY_SUBMITTED</span><i class="muted">→</i><span class="state">SURVEY_APPROVED</span><i class="muted">→</i><span class="state">QUOTED</span><i class="muted">→</i><span class="state end">WON</span>
+  </div>
+  <p class="muted">A rejected survey goes back to QUALIFIED. Any open lead can become LOST. Every other move returns <code>409 INVALID_STATUS_TRANSITION</code>.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Step</th><th>Who acts</th><th>Screen (B)</th><th>API (A)</th><th>Backend logic (A)</th></tr></thead>
+    <tbody>
+      <tr><td>Enquiry</td><td>Customer</td><td class="file">PublicEnquiry.jsx</td><td class="file">POST /public/enquiries</td><td>Validate the phone number, fold a repeat phone into the existing lead, auto-assign to the least-busy staff member</td></tr>
+      <tr><td>Inbox</td><td>Staff, admin</td><td class="file">LeadInbox.jsx</td><td class="file">GET /leads</td><td>Filters, search, paging, per-status counts; staff are forced to their own leads</td></tr>
+      <tr><td>Qualify</td><td>Staff</td><td class="file">LeadDetail.jsx</td><td class="file">PATCH /leads/:id/qualify</td><td>Store the answers in JSONB, suggest kW, move NEW → QUALIFIED</td></tr>
+      <tr><td>Schedule survey</td><td>Staff</td><td class="file">LeadDetail.jsx</td><td class="file">POST /leads/:id/surveys</td><td>Check the technician, move to SURVEY_SCHEDULED, insert the survey</td></tr>
+      <tr><td>Do survey</td><td>Technician</td><td class="file">TechnicianSurveys.jsx, SurveyForm.jsx</td><td class="file">GET /surveys/my, PATCH /surveys/:id/submit</td><td>Multipart photos via Multer, only the assigned technician, move to SURVEY_SUBMITTED</td></tr>
+      <tr><td>Approve</td><td>Admin</td><td class="file">LeadDetail.jsx</td><td class="file">PATCH /surveys/:id/review</td><td>APPROVE → SURVEY_APPROVED; REJECT (note required) → QUALIFIED</td></tr>
+      <tr><td>Quote</td><td>Staff</td><td class="file">QuoteBuilder.jsx</td><td class="file">POST /leads/:id/quotes</td><td>Survey gate, package + installation BOM, totals, parts snapshot, move to QUOTED</td></tr>
+      <tr><td>Send / win</td><td>Staff</td><td class="file">QuoteView.jsx</td><td class="file">GET /quotes/:id/pdf, PATCH /quotes/:id/status</td><td>PDFKit PDF; ACCEPTED → lead WON, other open quotes closed</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>Backend file map <span class="owner a">Person A</span></h2>
+  <p class="muted">Request path: <code>routes</code> → <code>middleware</code> → <code>controllers</code> (validate and shape input) → <code>services</code> (SQL and rules) → <code>utils</code>. All paths are under <code>backend/</code>.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>File</th><th class="num">Lines</th><th>What it covers</th></tr></thead>
+    <tbody>
+      <tr class="group"><td colspan="3">Entry + config</td></tr>
+      <tr><td class="file">src/server.js</td><td class="num">13</td><td>Starts the HTTP server, closes the DB pool cleanly on Ctrl+C</td></tr>
+      <tr><td class="file">src/app.js</td><td class="num">40</td><td>CORS (configured origins, plus any localhost port in dev), JSON body, request logging, static <code>/uploads</code>, health check, routes, 404 + error handler</td></tr>
+      <tr><td class="file">src/config/env.js</td><td class="num">16</td><td>Reads <code>.env</code>; fails fast if <code>DATABASE_URL</code> or <code>JWT_SECRET</code> is missing</td></tr>
+      <tr><td class="file">src/config/db.js</td><td class="num">43</td><td>pg <code>Pool</code>, type parsers (NUMERIC/BIGINT → number, DATE kept as text), <strong><code>withTransaction()</code></strong></td></tr>
+      <tr class="group"><td colspan="3">Middleware</td></tr>
+      <tr><td class="file">src/middleware/auth.js</td><td class="num">21</td><td>Reads <code>Bearer</code> JWT → <code>req.user</code>; separate messages for an expired or invalid token</td></tr>
+      <tr><td class="file">src/middleware/roles.js</td><td class="num">16</td><td><code>authorize('ADMIN','STAFF')</code> role gate → 403</td></tr>
+      <tr><td class="file">src/middleware/upload.js</td><td class="num">39</td><td>Multer to <code>uploads/surveys</code>: random file names, image types only, 5 MB and 8 files max, cleanup helper</td></tr>
+      <tr><td class="file">src/middleware/error.js</td><td class="num">55</td><td>One error format; maps Postgres codes (23505 → 409, 23503/23514/22P02 → 400), Multer and JSON errors</td></tr>
+      <tr class="group"><td colspan="3">Routes (thin: URL + guard → controller)</td></tr>
+      <tr><td class="file">src/routes/*.routes.js</td><td class="num">103</td><td>auth, public, leads (plus nested surveys/quotes and admin <code>/assign</code>), surveys, users, templates, quotes</td></tr>
+      <tr class="group"><td colspan="3">Controllers (validate input, call a service, reply)</td></tr>
+      <tr><td class="file">src/controllers/leads.controller.js</td><td class="num">101</td><td>Enquiry, list filters (forced to own leads for staff), manual entry, qualify fields, lost, reassign</td></tr>
+      <tr><td class="file">src/controllers/surveys.controller.js</td><td class="num">78</td><td>Date/time checks, survey fields, photo cleanup if saving fails, approve/reject rules</td></tr>
+      <tr><td class="file">src/controllers/quotes.controller.js</td><td class="num">53</td><td><code>includeInstallation</code>, discount cap 30%, validity days, PDF streaming headers</td></tr>
+      <tr><td class="file">auth · templates · users controllers</td><td class="num">43</td><td>Login, package filters (<code>kind</code>, <code>systemType</code>, <code>capacityKw</code>), user list by role</td></tr>
+      <tr class="group"><td colspan="3">Services (the business logic: 49% of backend code)</td></tr>
+      <tr><td class="file">src/services/leads.service.js</td><td class="num">276</td><td>Least-busy auto-assign (advisory lock), duplicate detection, inbox query, lead detail (4 parallel queries), qualify, lost (also closes the lead's surveys and quotes), admin reassign</td></tr>
+      <tr><td class="file">src/services/quotes.service.js</td><td class="num">209</td><td>Survey gate, package + installation BOM, <code>calculateTotals()</code>, parts snapshot via <code>unnest()</code>, quote status flow → WON</td></tr>
+      <tr><td class="file">src/services/pdf.service.js</td><td class="num">163</td><td>PDFKit quote: header, customer and system blocks, parts grouped by section, totals, terms, page-break handling</td></tr>
+      <tr><td class="file">src/services/surveys.service.js</td><td class="num">135</td><td>Assign, technician list, submit (assigned technician only), review with lead status change</td></tr>
+      <tr><td class="file">auth · templates · users services</td><td class="num">86</td><td>bcrypt check that takes the same time whether or not the email exists; package list with parts as JSON (<code>json_agg</code>) and estimated price</td></tr>
+      <tr class="group"><td colspan="3">Utils (shared rules)</td></tr>
+      <tr><td class="file">src/utils/leadStatus.js</td><td class="num">75</td><td><strong>State machine</strong> and <code>transitionLead()</code></td></tr>
+      <tr><td class="file">src/utils/access.js</td><td class="num">31</td><td><strong>Ownership rule</strong>: staff see only their own leads, anyone else's is a 404</td></tr>
+      <tr><td class="file">src/utils/validate.js</td><td class="num">85</td><td>Dependency-free validation: Indian mobile, email, pincode, numbers, enums</td></tr>
+      <tr><td class="file">src/utils/sizing.js</td><td class="num">31</td><td>Suggested kW from bill, roof and sanctioned load</td></tr>
+      <tr><td class="file">AppError · response · money</td><td class="num">52</td><td>Typed errors; <code>{success,data}</code> envelope with snake → camelCase; rounding to paise</td></tr>
+      <tr class="group"><td colspan="3">Scripts + tests</td></tr>
+      <tr><td class="file">scripts/pg-local.mjs</td><td class="num">43</td><td>Starts the bundled Postgres; data stored outside OneDrive so syncing can't corrupt it</td></tr>
+      <tr><td class="file">scripts/db-reset.js</td><td class="num">43</td><td>Runs <code>reset.sql</code> or a migration without psql (inlines <code>\ir</code>); refuses <code>db:migrate</code> without a file</td></tr>
+      <tr><td class="file">scripts/smoke-test.js</td><td class="num">201</td><td>64 end-to-end checks; <code>API_URL</code> points it at a separate test database</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>Database file map <span class="owner a">Person A</span></h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>File</th><th class="num">Lines</th><th>What it covers</th></tr></thead>
+    <tbody>
+      <tr><td class="file">db/01_schema.sql</td><td class="num">215</td><td>10 enums (statuses, roles, sources, <code>package_kind</code>…), 9 tables, indexes, an <code>updated_at</code> trigger, a partial unique index (<strong>one open survey per lead</strong>), auto-numbered lead codes and quote numbers</td></tr>
+      <tr><td class="file">db/02_seed.sql</td><td class="num">102</td><td>4 users (bcrypt hashes), 5 demo leads at different stages, 2 surveys, activity timeline</td></tr>
+      <tr><td class="file">db/03_packages.sql</td><td class="num">132</td><td>27 parts and <strong>20 packages</strong> (Panel Set / On-Grid / Off-Grid / Installation × 1–5 kW); parts lists generated from <strong>quantity rules</strong>; safe to re-run</td></tr>
+      <tr><td class="file">db/migrations/001_packages.sql</td><td class="num">39</td><td>In-place upgrade that keeps leads and quotes (<code>ADD COLUMN IF NOT EXISTS</code>, backfills, constraint swap)</td></tr>
+      <tr><td class="file">db/reset.sql</td><td class="num">11</td><td>Drops and rebuilds everything (01 + 02 + 03)</td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted">Tables: <code>users</code>, <code>leads</code>, <code>lead_activities</code>, <code>surveys</code>, <code>products</code>, <code>package_templates</code>, <code>template_items</code>, <code>quotes</code>, <code>quote_items</code>. Money is <code>NUMERIC(12,2)</code>, qualification answers are <code>JSONB</code>, survey photos are a <code>TEXT[]</code> of paths, and survey visits are <code>TIMESTAMPTZ</code>.</p>
+</section>
+
+<section>
+  <h2>Frontend file map <span class="owner b">Person B</span></h2>
+  <p class="muted">All paths are under <code>frontend/src/</code>. Rows marked A+B are B's files with integration changes from A.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>File</th><th class="num">Lines</th><th>Owner</th><th>What it covers</th></tr></thead>
+    <tbody>
+      <tr class="group"><td colspan="4">Pages (62% of frontend code)</td></tr>
+      <tr><td class="file">pages/LeadDetail.jsx</td><td class="num">1,017</td><td><span class="owner ab">A+B</span></td><td>Lead overview: pipeline stepper, customer card, qualification, survey with photos, quote card, timeline, 4 action modals; admin Reassign control (A)</td></tr>
+      <tr><td class="file">pages/QuoteBuilder.jsx</td><td class="num">499</td><td><span class="owner ab">A+B</span></td><td>Package cards, kW sizes, installation tickbox, grouped BOM preview, discount slider, totals using the same maths as the backend; mock-mode fallback</td></tr>
+      <tr><td class="file">pages/LeadInbox.jsx</td><td class="num">457</td><td><span class="owner b">B</span></td><td>Metric tiles, status pills, search, lead table, manual "New lead" modal</td></tr>
+      <tr><td class="file">pages/QuoteView.jsx</td><td class="num">406</td><td><span class="owner ab">A+B</span></td><td>Printable proposal, parts grouped by section, Download PDF (A), Mark Sent / Accepted / Rejected</td></tr>
+      <tr><td class="file">pages/SurveyForm.jsx</td><td class="num">387</td><td><span class="owner b">B</span></td><td>Mobile survey sheet: roof, structure, cable run, inverter spot, shading, photos read with FileReader</td></tr>
+      <tr><td class="file">pages/PublicEnquiry.jsx</td><td class="num">338</td><td><span class="owner b">B</span></td><td>Public landing form with live kW estimate and confirmation screen</td></tr>
+      <tr><td class="file">pages/TechnicianSurveys.jsx</td><td class="num">219</td><td><span class="owner b">B</span></td><td>Technician's visits: To do / Completed tabs, call link</td></tr>
+      <tr><td class="file">pages/Login.jsx</td><td class="num">150</td><td><span class="owner b">B</span></td><td>Login with quick-fill demo roles</td></tr>
+      <tr class="group"><td colspan="4">API layer</td></tr>
+      <tr><td class="file">api/client.js</td><td class="num">764</td><td><span class="owner ab">A+B</span></td><td>Axios instance with JWT; <strong>mock database and request handler</strong> (B); live path: strips the duplicate <code>/api</code>, logs out on 401, PDF download (A)</td></tr>
+      <tr><td class="file">api/liveAdapter.js</td><td class="num">212</td><td><span class="owner a">A</span></td><td><strong>Translation layer</strong>: page field names and shapes ↔ API; base64 photos → multipart files; nested <code>lead</code> objects for surveys and quotes</td></tr>
+      <tr><td class="file">api/mockData.js</td><td class="num">529</td><td><span class="owner b">B</span></td><td>Demo users, leads, templates and quotes for offline mode</td></tr>
+      <tr class="group"><td colspan="4">Shell</td></tr>
+      <tr><td class="file">App.jsx</td><td class="num">117</td><td><span class="owner b">B</span></td><td>Routes and <code>ProtectedRoute</code> by role; technicians are redirected to their surveys</td></tr>
+      <tr><td class="file">context/AuthContext.jsx</td><td class="num">93</td><td><span class="owner b">B</span></td><td>Login/logout, token and user in localStorage, <code>hasRole()</code>, mock toggle</td></tr>
+      <tr><td class="file">components/*</td><td class="num">293</td><td><span class="owner b">B</span></td><td>Navbar (Mock/Live badge), Modal, StatusBadge, ActivityTimeline</td></tr>
+      <tr><td class="file">utils/leadStatus.js · formatters.js</td><td class="num">117</td><td><span class="owner b">B</span></td><td>The same state machine on the client (to show the right buttons), status colours, ₹/date/kW formatting</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>The core logic</h2>
+  <div class="logic">
+    <div class="panel a">
+      <h3>Atomic status moves <span class="owner a">A</span></h3>
+      <div class="where">utils/leadStatus.js · config/db.js</div>
+      <p><code>transitionLead(client, id, to, actor, note)</code> locks the lead row with <code>SELECT … FOR UPDATE</code>, checks the <code>TRANSITIONS</code> map, updates the status and writes the timeline entry, all on one connection inside <code>BEGIN … COMMIT</code>. Two people clicking at once can't both move the same lead.</p>
+    </div>
+    <div class="panel a">
+      <h3>Ownership <span class="owner a">A</span></h3>
+      <div class="where">utils/access.js</div>
+      <p><code>assertLeadAccess()</code> runs on every lead, survey-assignment and quote action. For staff, a lead that isn't theirs returns <strong>404, not 403</strong>, so its existence isn't revealed. The inbox filter is forced on the server, and duplicate-phone warnings hide the other lead's details.</p>
+    </div>
+    <div class="panel a">
+      <h3>Fair auto-assign <span class="owner a">A</span></h3>
+      <div class="where">services/leads.service.js</div>
+      <p>A website enquiry goes to the active staff member with the fewest open leads. <code>pg_advisory_xact_lock</code> handles enquiries one at a time, so two arriving together can't both choose the same "least busy" person.</p>
+    </div>
+    <div class="panel a">
+      <h3>Packages → parts list <span class="owner a">A</span></h3>
+      <div class="where">db/03_packages.sql</div>
+      <p>One rules table: which package kinds get a part, its section, and a quantity rule. Panels = <code>ceil(kW × 1000 / 540)</code>, connector pairs = panels + 2, DC cable = 10 + 10 × kW m, AC cable = 15 + 5 × kW m, stands = kW, batteries = 2 (≤ 2 kW) or 4. The inverter and charge controller are picked by size.</p>
+    </div>
+    <div class="panel a">
+      <h3>Quote maths <span class="owner a">A</span></h3>
+      <div class="where">services/quotes.service.js</div>
+      <p><code>calculateTotals()</code>: subtotal = Σ qty × rate; the discount applies to every line <em>before</em> GST; GST is charged per line at the part's rate (5% panels and electronics, 18% others) on the discounted value; everything is rounded to paise. The quote builder uses the same formula, so preview = saved quote.</p>
+    </div>
+    <div class="panel a">
+      <h3>Price snapshot <span class="owner a">A</span></h3>
+      <div class="where">services/quotes.service.js</div>
+      <p>All quote lines are inserted in <strong>one statement</strong> with <code>INSERT … SELECT FROM unnest(arrays)</code>, copying name, rate, GST and section. Later price changes never alter a quote already issued.</p>
+    </div>
+    <div class="panel a">
+      <h3>Safe SQL and errors <span class="owner a">A</span></h3>
+      <div class="where">all services · middleware/error.js</div>
+      <p>Every query uses <code>$1, $2</code> parameters, and LIKE wildcards are escaped in search. Database error codes become clear 400/409 replies in one <code>{success:false, error:{code,message}}</code> format.</p>
+    </div>
+    <div class="panel a">
+      <h3>Photo uploads <span class="owner a">A</span></h3>
+      <div class="where">middleware/upload.js · surveys.controller.js</div>
+      <p>Multer saves files under random names (the client's file name is never trusted), checks type and size, and the database stores <code>/uploads/surveys/…</code> paths. If the database step fails, the uploaded files are deleted so none are left orphaned.</p>
+    </div>
+    <div class="panel b">
+      <h3>Mock-first UI <span class="owner b">B</span></h3>
+      <div class="where">api/client.js · api/mockData.js</div>
+      <p>The <code>apiClient</code> sends each call either to an in-browser mock database (saved to localStorage) or to the real server. That let B build and demo every screen before the backend existed, and it's still an offline fallback.</p>
+    </div>
+    <div class="panel ab" style="border-top:3px solid var(--muted)">
+      <h3>Live adapter <span class="owner ab">A+B</span></h3>
+      <div class="where">api/liveAdapter.js</div>
+      <p>Bridges the two halves without rewriting B's pages:</p>
+      <ul>
+        <li>snake_case ↔ camelCase</li>
+        <li>renames, e.g. <code>template_id → templateId</code>, <code>total → total_amount</code></li>
+        <li>review reshaped: <code>{status:'APPROVED'} → {decision:'APPROVE'}</code></li>
+        <li>datetime-local → ISO time</li>
+        <li>base64 photos → multipart <code>File</code>s</li>
+      </ul>
+    </div>
+    <div class="panel b">
+      <h3>Role-based screens <span class="owner b">B</span></h3>
+      <div class="where">App.jsx · LeadDetail.jsx</div>
+      <p><code>ProtectedRoute</code> sends each role to its own area. The lead page shows only the action that is valid for the current status (Qualify → Schedule → Review → Create quote), matching the backend's state machine.</p>
+    </div>
+    <div class="panel a">
+      <h3>Suggested size <span class="owner a">A</span></h3>
+      <div class="where">utils/sizing.js</div>
+      <p>units = bill ÷ ₹8; kW = units ÷ 120 (about 4 units per kW per day), capped by roof area ÷ 100 sq ft and by sanctioned load, then rounded and kept within the 1–5 kW packages. The survey's recommended kW replaces it on approval.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>One request end to end: "Create Formal Quote"</h2>
+  <ol class="steps">
+    <li><strong>QuoteBuilder.jsx</strong> (B) sends <code>{template_id, include_installation, discount_percentage, notes}</code> through <code>apiClient.post('/api/leads/5/quotes')</code>.</li>
+    <li><strong>client.js</strong> strips <code>/api</code>; <strong>liveAdapter.js</strong> turns it into <code>{templateId, includeInstallation, discountPct, notes}</code>; axios attaches the JWT.</li>
+    <li><strong>leads.routes.js</strong> → <code>authenticate</code> → <code>authorize(ADMIN, STAFF)</code> → <strong>quotes.controller.js</strong> validates the IDs, caps the discount at 30% and defaults installation to on.</li>
+    <li><strong>quotes.service.js</strong> opens a transaction:
+      <ul>
+        <li><code>assertLeadAccess</code> locks the lead (404 if it isn't yours), and the status must be SURVEY_APPROVED or QUOTED</li>
+        <li>finds the approved survey, then loads the package and the Installation package of the same size</li>
+        <li>reads the parts list, calculates totals, inserts the quote and all lines in one statement</li>
+        <li><code>transitionLead → QUOTED</code>, then COMMIT</li>
+      </ul>
+    </li>
+    <li><strong>response.js</strong> wraps the reply as <code>{success, data}</code> in camelCase; the adapter maps it back to the page's names, and the page opens <strong>QuoteView.jsx</strong>. "Download PDF" streams <strong>pdf.service.js</strong> output.</li>
+  </ol>
+</section>
+
+<section id="most">
+  <h2>Files that matter most</h2>
+  <div class="split">
+    <div class="panel">
+      <h3>By importance</h3>
+      <ol class="steps" style="padding-left:20px">
+        <li><code>utils/leadStatus.js</code>: every status rule and the atomic move</li>
+        <li><code>services/quotes.service.js</code> + <code>db/03_packages.sql</code>: packages → parts → money</li>
+        <li><code>services/leads.service.js</code>: intake, assignment, inbox, qualify</li>
+        <li><code>utils/access.js</code>: data privacy between staff</li>
+        <li><code>api/liveAdapter.js</code> + <code>api/client.js</code>: the bridge between UI and API</li>
+      </ol>
+    </div>
+    <div class="panel">
+      <h3>By size</h3>
+      <ol class="steps" style="padding-left:20px">
+        <li><code>pages/LeadDetail.jsx</code>: 1,017 lines (B)</li>
+        <li><code>api/client.js</code>: 764 (B, plus A's live path)</li>
+        <li><code>api/mockData.js</code>: 529 (B)</li>
+        <li><code>pages/QuoteBuilder.jsx</code>: 499 (A+B)</li>
+        <li><code>pages/LeadInbox.jsx</code>: 457 (B)</li>
+        <li><code>services/leads.service.js</code>: 276 (A, largest backend file)</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Tooling and how we work</h2>
+  <div class="split">
+    <div class="panel">
+      <h3>Running it</h3>
+      <ul>
+        <li><code>npm run db:start</code>: bundled Postgres on port 5433</li>
+        <li><code>npm run dev</code> (backend, port 5000) and <code>npm run dev</code> (frontend, Vite on port 5173)</li>
+        <li><code>npm run db:migrate -- migrations/001_packages.sql</code>: upgrade, keeping data</li>
+        <li><code>npm run db:reset</code>: wipe and reload demo data (only before a demo)</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Checking it</h3>
+      <ul>
+        <li><code>npm run test:smoke</code>: 64 checks covering the whole flow, 409 gates, 403/404 rules, packages, PDF and reassign</li>
+        <li>A separate <code>sunpower_test</code> database plus <code>API_URL</code> keeps tests away from real data</li>
+        <li>Postman/Thunder collection with token-saving login requests</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Team workflow</h3>
+      <ul>
+        <li>The SQL in <code>db/</code> is the source of truth; schema changes ship as migrations</li>
+        <li>An agreed endpoint contract let A and B build in parallel (B against the mock)</li>
+        <li>Small commits on <code>main</code>; no READMEs or <code>.env</code> files on GitHub</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer>Line counts are from the repository at commit <code>d369f43</code> (21 Nov 2026), excluding lockfiles and the generated Postman collection.</footer>
+</div>
+
+<!--claude-mermaid-runtime-begin:3477-->
+<style>.mermaid-diagram{margin-block:4px}.mermaid-diagram svg{display:block;margin:0 auto;max-width:100%;height:auto}</style>
+<script src="/_runtime/mermaid-11.16.1.min.js"></script>
+<script>(function(){
+var CFG={"palettes":{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},"dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}};
+if(typeof mermaid==='undefined')return;
+var pres=Array.prototype.slice.call(document.querySelectorAll('pre.mermaid')).filter(function(p){if(p.hasAttribute('data-claude-mermaid-claimed'))return false;p.setAttribute('data-claude-mermaid-claimed','1');return true;});
+if(!pres.length)return;
+var mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+var root=document.documentElement;
+var items=pres.map(function(pre){
+var mount=document.createElement('div');mount.className='mermaid-diagram';
+return {pre:pre,mount:mount,src:pre.textContent||''};
+});
+var seq=0;
+var renderGen=0;
+var lastKey='';
+function pageBg(fallback){
+var els=[document.body,document.documentElement];
+for(var i=0;i<els.length;i++){
+var c=els[i]&&getComputedStyle(els[i]).backgroundColor;
+if(c&&c!=='transparent'&&c!=='rgba(0, 0, 0, 0)')return c;
+}
+return fallback;
+}
+function render(){
+var theme=root.getAttribute('data-theme');
+var dark=theme==='dark'||(!!(mq&&mq.matches)&&theme!=='light');
+var pal=dark?CFG.palettes.dark:CFG.palettes.light;
+var bg=pageBg(pal.bg);
+var key=(dark?'d':'l')+'|'+bg;
+if(key===lastKey)return;
+lastKey=key;
+var gen=++renderGen;
+var font=getComputedStyle(document.body).fontFamily||'sans-serif';
+var nat={useMaxWidth:false};
+mermaid.initialize({
+startOnLoad:false,securityLevel:'strict',theme:'base',
+flowchart:nat,sequence:nat,er:nat,state:nat,class:nat,pie:nat,
+gantt:nat,journey:nat,timeline:nat,gitGraph:nat,mindmap:nat,xyChart:nat,
+quadrantChart:nat,sankey:nat,c4:nat,requirement:nat,block:nat,
+packet:nat,kanban:nat,architecture:nat,radar:nat,
+themeVariables:{background:bg,mainBkg:pal.surface,primaryColor:pal.surface,
+primaryTextColor:pal.text,lineColor:pal.line,primaryBorderColor:pal.border,
+nodeBorder:pal.border,clusterBorder:pal.border,edgeLabelBackground:bg,
+clusterBkg:'rgba(127,127,127,0.07)',titleColor:pal.text,
+darkMode:dark,rowOdd:bg,rowEven:'rgba(127,127,127,0.07)',
+attributeBackgroundColorOdd:bg,attributeBackgroundColorEven:'rgba(127,127,127,0.07)',
+fontSize:'16px',fontFamily:font},
+themeCSS:'.node rect, .node circle, .node polygon, .node path, .cluster rect { stroke-width: 2px; }'
+});
+items.forEach(function(it){
+var id='claude-mermaid-'+seq++;
+mermaid.render(id,it.src).then(function(r){
+if(gen!==renderGen)return;
+var prev=it.pre.previousElementSibling;
+if(prev&&prev.className==='mermaid-diagram'&&prev!==it.mount)return;
+it.mount.innerHTML=r.svg;
+if(!it.mount.parentNode)it.pre.parentNode.insertBefore(it.mount,it.pre);
+it.pre.style.display='none';
+},function(){
+var scratch=document.getElementById(id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+scratch=document.getElementById('d'+id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+if(gen!==renderGen)return;
+if(it.mount.parentNode)it.mount.parentNode.removeChild(it.mount);
+it.pre.style.display='';
+});
+});
+}
+render();
+if(mq&&mq.addEventListener)mq.addEventListener('change',render);
+if(typeof MutationObserver!=='undefined')new MutationObserver(render).observe(root,{attributes:true,attributeFilter:['data-theme']});
+})();</script>
+<!--claude-mermaid-runtime-end-->
+
+</body></html>
