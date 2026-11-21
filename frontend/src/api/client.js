@@ -640,7 +640,7 @@ async function mockRequest(method, url, data = null, params = null) {
     const quoteId = Number(quoteMatch[1]);
     const quote = mockDb.quotes.find((q) => q.id === quoteId);
     if (!quote) throw { response: { status: 404, data: { success: false, error: { code: 'NOT_FOUND', message: 'Quote not found' } } } };
-    
+
     // Attach lead information
     const lead = mockDb.leads.find((l) => l.id === quote.lead_id);
     return { success: true, data: { ...quote, lead } };

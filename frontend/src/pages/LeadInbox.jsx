@@ -197,11 +197,10 @@ export default function LeadInbox() {
             <button
               key={st.key}
               onClick={() => setSelectedStatus(st.key)}
-              className={`px-3 py-1.5 rounded-xl font-medium shrink-0 transition ${
-                selectedStatus === st.key
-                  ? 'bg-amber-500 text-white shadow-xs font-semibold'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
+              className={`px-3 py-1.5 rounded-xl font-medium shrink-0 transition ${selectedStatus === st.key
+                ? 'bg-amber-500 text-white shadow-xs font-semibold'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
             >
               {st.label}
             </button>

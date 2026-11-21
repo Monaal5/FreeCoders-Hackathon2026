@@ -362,24 +362,22 @@ export default function LeadDetail() {
             return (
               <div key={step.key} className="relative z-10 flex flex-col items-center">
                 <div
-                  className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition shadow-xs ${
-                    isCurrent
-                      ? 'bg-amber-500 text-white ring-4 ring-amber-100'
-                      : isCompleted
+                  className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition shadow-xs ${isCurrent
+                    ? 'bg-amber-500 text-white ring-4 ring-amber-100'
+                    : isCompleted
                       ? 'bg-emerald-500 text-white'
                       : 'bg-white border-2 border-slate-300 text-slate-400'
-                  }`}
+                    }`}
                 >
                   {isCompleted && !isCurrent ? '✓' : idx + 1}
                 </div>
                 <span
-                  className={`text-[11px] font-semibold mt-2 whitespace-nowrap ${
-                    isCurrent
-                      ? 'text-amber-600 font-bold'
-                      : isCompleted
+                  className={`text-[11px] font-semibold mt-2 whitespace-nowrap ${isCurrent
+                    ? 'text-amber-600 font-bold'
+                    : isCompleted
                       ? 'text-slate-800'
                       : 'text-slate-400'
-                  }`}
+                    }`}
                 >
                   {step.label}
                 </span>
@@ -535,15 +533,14 @@ export default function LeadDetail() {
                   Technical Site Survey Details
                 </h2>
                 <span
-                  className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
-                    latestSurvey.status === 'APPROVED'
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      : latestSurvey.status === 'SUBMITTED'
+                  className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${latestSurvey.status === 'APPROVED'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : latestSurvey.status === 'SUBMITTED'
                       ? 'bg-amber-50 text-amber-700 border-amber-200'
                       : latestSurvey.status === 'REJECTED'
-                      ? 'bg-rose-50 text-rose-700 border-rose-200'
-                      : 'bg-purple-50 text-purple-700 border-purple-200'
-                  }`}
+                        ? 'bg-rose-50 text-rose-700 border-rose-200'
+                        : 'bg-purple-50 text-purple-700 border-purple-200'
+                    }`}
                 >
                   Survey {latestSurvey.status}
                 </span>

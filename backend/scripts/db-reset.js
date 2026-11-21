@@ -25,7 +25,8 @@ function inline(file) {
 (async () => {
   const file = path.resolve(dbDir, target);
   if (!fs.existsSync(file)) throw new Error(`No such file: ${file}`);
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  const dbUrl = process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5433/sunpower';
+  const client = new Client({ connectionString: dbUrl });
   await client.connect();
   try {
     await client.query(inline(file));
