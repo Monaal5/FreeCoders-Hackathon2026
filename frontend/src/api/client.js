@@ -54,18 +54,16 @@ api.interceptors.response.use(
   },
 );
 
-// Mode State Management (Mock vs Live)
-// Default to Live mode (real Express + PostgreSQL backend); Mock stays available from the navbar toggle.
-const MOCK_STORAGE_KEY = 'sunpower_use_mock';
-export function isMockMode() {
-  const saved = localStorage.getItem(MOCK_STORAGE_KEY);
-  if (saved === null) return false;
-  return saved === 'true';
+// Data source: ALWAYS the real Express + PostgreSQL backend.
+// The in-browser mock database is no longer selectable (the toggle was removed); the old saved
+// choice is cleared so a browser that was left on "Mock DB" comes back to PostgreSQL.
+try {
+  localStorage.removeItem('sunpower_use_mock');
+} catch {
+  /* storage unavailable: nothing to clear */
 }
-
-export function setMockMode(enabled) {
-  localStorage.setItem(MOCK_STORAGE_KEY, enabled ? 'true' : 'false');
-  window.dispatchEvent(new Event('sunpower_mode_changed'));
+export function isMockMode() {
+  return false;
 }
 
 // In-Memory & LocalStorage persistent mock database

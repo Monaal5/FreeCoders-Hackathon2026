@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { AlertCircle, ArrowRight, ArrowLeft, KeyRound, Database, RefreshCw, Mail, Lock } from 'lucide-react';
+import { AlertCircle, ArrowRight, ArrowLeft, KeyRound, Mail, Lock } from 'lucide-react';
 import SunPowerLogo from '../components/SunPowerLogo';
 
 export default function Login() {
@@ -9,7 +9,7 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const { login, loading, useMock, toggleMockMode, resetMockData } = useAuth();
+  const { login, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -48,23 +48,6 @@ export default function Login() {
             <SunPowerLogo variant="light" size="sm" />
           </Link>
           <div className="flex items-center gap-2">
-            <button
-              onClick={toggleMockMode}
-              title="Click to toggle between Mock Database and Local PostgreSQL"
-              className="glass-dark inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-medium text-white/90 hover:text-white transition"
-            >
-              <Database className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{useMock ? 'Mock DB' : 'PostgreSQL'}</span>
-            </button>
-            {useMock && (
-              <button
-                onClick={resetMockData}
-                title="Reset demo data to initial seed"
-                className="glass-dark p-2 rounded-full text-white/80 hover:text-white"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-              </button>
-            )}
             <Link
               to="/enquiry"
               className="glass-dark inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium text-white hover:bg-white/15 transition"

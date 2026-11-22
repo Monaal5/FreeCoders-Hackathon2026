@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { apiClient } from '../api/client';
-import { useAuth } from '../context/AuthContext';
-import { CheckCircle2, ArrowRight, IndianRupee, Database } from 'lucide-react';
+import { CheckCircle2, ArrowRight, IndianRupee } from 'lucide-react';
 import SunPowerLogo from '../components/SunPowerLogo';
 import {
   HeroSection,
@@ -36,7 +35,6 @@ const EMPTY_FORM = {
 };
 
 export default function PublicEnquiry() {
-  const { useMock, toggleMockMode } = useAuth();
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -288,14 +286,6 @@ export default function PublicEnquiry() {
 
         <div className="mt-16 pt-6 border-t border-black/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-[#808080]">
           <span>© {new Date().getFullYear()} SunPower. Solar energy &amp; storage.</span>
-          <button
-            onClick={toggleMockMode}
-            title="Click to toggle between Mock Database and Local PostgreSQL"
-            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-black/10 hover:border-black/30 hover:text-black transition cursor-pointer"
-          >
-            <Database className="w-3 h-3" />
-            Data source: {useMock ? 'Mock DB' : 'PostgreSQL'}
-          </button>
         </div>
       </footer>
 

@@ -7,8 +7,6 @@ import {
   ClipboardList,
   HardHat,
   Globe,
-  RefreshCw,
-  Database,
   Package,
   Layers,
   Truck,
@@ -19,7 +17,7 @@ import {
 import SunPowerLogo from './SunPowerLogo';
 
 export default function Navbar() {
-  const { user, logout, useMock, toggleMockMode, resetMockData } = useAuth();
+  const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -93,33 +91,8 @@ export default function Navbar() {
               )}
             </div>
 
-            {/* Right section: Mode switch + User status */}
+            {/* Right section: User status */}
             <div className="flex items-center gap-2.5 shrink-0">
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={toggleMockMode}
-                  title="Click to toggle between Mock Database and Local PostgreSQL"
-                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border backdrop-blur transition ${
-                    useMock
-                      ? 'bg-white/60 text-neutral-800 border-black/10 hover:bg-white'
-                      : 'bg-emerald-50/70 text-emerald-800 border-emerald-200 hover:bg-emerald-50'
-                  }`}
-                >
-                  <Database className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">{useMock ? 'Mock DB' : 'PostgreSQL'}</span>
-                </button>
-
-                {useMock && (
-                  <button
-                    onClick={resetMockData}
-                    title="Reset demo data to initial seed"
-                    className="p-1.5 text-neutral-500 hover:text-black rounded-full hover:bg-white/70"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-
               {user ? (
                 <div className="flex items-center gap-2.5 pl-2.5 border-l border-black/10">
                   <div className="text-right hidden sm:block leading-tight">

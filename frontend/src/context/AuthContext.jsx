@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
-import { apiClient, setMockMode, isMockMode, mockDb } from '../api/client';
+import { apiClient } from '../api/client';
 import { TOKEN_KEY, getStoredToken, userFromToken } from '../utils/authToken';
 
 const AuthContext = createContext(null);
@@ -25,18 +25,11 @@ export function AuthProvider({ children }) {
     return t;
   });
   const user = useMemo(() => userFromToken(token), [token]);
-  const [useMock, setUseMockState] = useState(isMockMode());
   const [loading, setLoading] = useState(false);
 
   const logout = useCallback(() => {
     saveToken(null);
     setToken(null);
-  }, []);
-
-  useEffect(() => {
-    const handleModeChange = () => setUseMockState(isMockMode());
-    window.addEventListener('sunpower_mode_changed', handleModeChange);
-    return () => window.removeEventListener('sunpower_mode_changed', handleModeChange);
   }, []);
 
   // Sign out automatically the moment the token expires.
@@ -53,7 +46,7 @@ export function AuthProvider({ children }) {
 
   // Reopened app (Live mode): ask the server whether the token is still valid and the role unchanged.
   useEffect(() => {
-    if (!token || isMockMode()) return;
+    if (!token) return;
     let cancelled = false;
     apiClient
       .get('/api/auth/me')
@@ -91,18 +84,6 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const toggleMockMode = () => {
-    const next = !useMock;
-    setMockMode(next);
-    setUseMockState(next);
-    logout(); // a token from one mode is not valid in the other
-  };
-
-  const resetMockData = () => {
-    mockDb.reset();
-    window.location.reload();
-  };
-
   const hasRole = (...roles) => !!user && roles.map((r) => r.toUpperCase()).includes(user.role);
 
   return (
@@ -111,13 +92,10 @@ export function AuthProvider({ children }) {
         user,
         token,
         loading,
-        useMock,
         isAuthenticated: !!user,
         hasRole,
         login,
         logout,
-        toggleMockMode,
-        resetMockData,
       }}
     >
       {children}
