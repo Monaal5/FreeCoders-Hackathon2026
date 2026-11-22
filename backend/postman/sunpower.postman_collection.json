@@ -716,7 +716,7 @@
           }
         },
         {
-          "name": "Review survey – approve (admin)",
+          "name": "Review survey – approve (lead owner staff or admin)",
           "request": {
             "method": "PATCH",
             "header": [
@@ -753,7 +753,7 @@
           }
         },
         {
-          "name": "Review survey – reject (admin)",
+          "name": "Review survey – reject (lead owner staff or admin)",
           "request": {
             "method": "PATCH",
             "header": [

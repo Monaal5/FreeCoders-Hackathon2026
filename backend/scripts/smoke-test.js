@@ -95,12 +95,16 @@ async function api(method, url, { token, body, form } = {}) {
   const img = await fetch(ORIGIN + sub.json.data.photos[0]);
   check('photo served', img.status === 200 && img.headers.get('content-type') === 'image/png');
 
-  const staffReview = await api('PATCH', `/surveys/${sv.json.data.id}/review`, { token: staff, body: { decision: 'APPROVE' } });
-  check('staff cannot review 403', staffReview.status === 403);
-  const rejNoNote = await api('PATCH', `/surveys/${sv.json.data.id}/review`, { token: admin, body: { decision: 'REJECT' } });
+  const techReview = await api('PATCH', `/surveys/${sv.json.data.id}/review`, { token: tech, body: { decision: 'APPROVE' } });
+  check('technician cannot review 403', techReview.status === 403);
+  const otherReview = await api('PATCH', `/surveys/${sv.json.data.id}/review`, { token: other, body: { decision: 'APPROVE' } });
+  check('other staff cannot review 404', otherReview.status === 404, otherReview.json);
+  const rejNoNote = await api('PATCH', `/surveys/${sv.json.data.id}/review`, { token: staff, body: { decision: 'REJECT' } });
   check('reject needs note 400', rejNoNote.status === 400);
-  const rv = await api('PATCH', `/surveys/${sv.json.data.id}/review`, { token: admin, body: { decision: 'APPROVE', note: 'OK' } });
-  check('approve survey', rv.status === 200 && rv.json.data.status === 'APPROVED', rv.json);
+  const rv = await api('PATCH', `/surveys/${sv.json.data.id}/review`, { token: staff, body: { decision: 'APPROVE', note: 'OK' } });
+  check('owner staff approves survey', rv.status === 200 && rv.json.data.status === 'APPROVED', rv.json);
+  const reviewAgain = await api('PATCH', `/surveys/${sv.json.data.id}/review`, { token: admin, body: { decision: 'APPROVE' } });
+  check('review twice 409', reviewAgain.status === 409, reviewAgain.json);
 
   const allPkgs = (await api('GET', '/templates', { token: staff })).json.data;
   const kinds = [...new Set(allPkgs.map((t) => t.kind))].join(',');

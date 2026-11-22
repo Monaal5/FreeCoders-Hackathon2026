@@ -190,7 +190,7 @@ export default function LeadDetail() {
     }
   };
 
-  // 3. Submit Admin Survey Review (Approve or Reject)
+  // 3. Submit Survey Review (lead owner staff or admin: Approve or Reject)
   const handleReviewSubmit = async (decision) => {
     setActionLoading(true);
     try {
@@ -599,7 +599,7 @@ export default function LeadDetail() {
                   )}
                   {latestSurvey.review_notes && (
                     <div className="text-emerald-800 bg-emerald-50 p-2 rounded-lg border border-emerald-200 mt-2">
-                      <span className="font-semibold">Admin Review: </span>
+                      <span className="font-semibold">Survey Review: </span>
                       {latestSurvey.review_notes} ({latestSurvey.reviewed_by})
                     </div>
                   )}
@@ -870,11 +870,11 @@ export default function LeadDetail() {
         </form>
       </Modal>
 
-      {/* 3. REVIEW SURVEY MODAL (Admin Approval / Rejection) */}
+      {/* 3. REVIEW SURVEY MODAL (lead owner staff or admin: Approval / Rejection) */}
       <Modal
         isOpen={reviewModalOpen}
         onClose={() => setReviewModalOpen(false)}
-        title="Admin Review: Site Survey Feasibility"
+        title="Review: Site Survey Feasibility"
         maxWidth="max-w-xl"
       >
         <div className="space-y-4">
@@ -913,7 +913,7 @@ export default function LeadDetail() {
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-              Admin Review Remarks *
+              Review Remarks *
             </label>
             <textarea
               rows={3}

@@ -95,13 +95,15 @@ async function submitSurvey(surveyId, data, photoPaths, technician) {
 }
 
 /**
- * Admin review of a SUBMITTED survey.
+ * Staff (lead owner) or admin review of a SUBMITTED survey. Another staff member's survey -> 404.
  *  APPROVE -> survey APPROVED, lead SURVEY_APPROVED (lead.suggested_kw takes the technician's recommendation)
  *  REJECT  -> survey REJECTED, lead back to QUALIFIED (staff can schedule a new survey)
  */
 async function reviewSurvey(surveyId, { decision, note }, admin) {
   return withTransaction(async (client) => {
     const survey = await lockSurvey(client, surveyId);
+    // staff may review only surveys of leads assigned to them (same 404 rule as leads)
+    await assertLeadAccess(client, survey.lead_id, admin);
     if (survey.status !== 'SUBMITTED') {
       throw AppError.conflict(`Only SUBMITTED surveys can be reviewed (this one is ${survey.status})`, 'INVALID_STATUS_TRANSITION', {
         current: survey.status,

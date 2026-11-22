@@ -497,7 +497,7 @@ async function mockRequest(method, url, data = null, params = null) {
     return { success: true, data: targetSurvey };
   }
 
-  // 11. PATCH /surveys/:id/review (Admin approves or rejects survey)
+  // 11. PATCH /surveys/:id/review (lead owner staff or admin approves / rejects survey)
   const reviewSurveyMatch = cleanUrl.match(/^\/surveys\/(\d+)\/review$/);
   if (reviewSurveyMatch && method === 'patch') {
     const surveyId = Number(reviewSurveyMatch[1]);
